@@ -1,0 +1,6 @@
+pyproject.toml
+electricity_consumption_analyser.egg-info/PKG-INFO
+electricity_consumption_analyser.egg-info/SOURCES.txt
+electricity_consumption_analyser.egg-info/dependency_links.txt
+electricity_consumption_analyser.egg-info/requires.txt
+electricity_consumption_analyser.egg-info/top_level.txt

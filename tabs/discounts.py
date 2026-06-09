@@ -1,0 +1,126 @@
+import numpy as np
+import pandas as pd
+import streamlit as st
+import plotly.express as px
+
+
+def render_discounts(scenarios, PROCESSED_DIR, WEEKDAY_ORDER, TARIFF,
+                     add_offer_eligibility, extract_weekdays, _hours_from_restriction):
+    st.header("Discount Recommendations")
+
+    if scenarios is None or scenarios.empty:
+        st.warning("No discount scenarios available yet.")
+        return
+
+    rank_cols = [
+        "supplier_name", "plan_name", "discount_pct", "discount_note",
+        "time_restriction", "requires_smart_meter", "eligibility",
+        "matching_usage_share_pct", "weighted_discount_score",
+    ]
+    display_cols = [c for c in rank_cols if c in scenarios.columns]
+
+    # Include source_url as a clickable column if available
+    if "source_url" in scenarios.columns:
+        display_cols.append("source_url")
+
+    st.dataframe(
+        scenarios[display_cols].round(2),
+        column_config={
+            "source_url": st.column_config.LinkColumn("Provider page", display_text="Open ↗"),
+        } if "source_url" in scenarios.columns else {},
+        width="stretch",
+    )
+
+    st.divider()
+    _render_plan_overlap(
+        scenarios, PROCESSED_DIR, WEEKDAY_ORDER, TARIFF,
+        add_offer_eligibility, extract_weekdays, _hours_from_restriction,
+    )
+
+
+def _render_plan_overlap(scenarios, PROCESSED_DIR, WEEKDAY_ORDER, TARIFF,
+                         add_offer_eligibility, extract_weekdays, _hours_from_restriction):
+    """Side-by-side heatmaps: your consumption vs. a plan's discount window."""
+    st.subheader("Consumption vs. Plan Tariff Window")
+    st.markdown(
+        "Select a plan to see your consumption profile next to the discount window. "
+        "Green = discounted rate, red = full rate."
+    )
+
+    stats_path = PROCESSED_DIR / "weekly_hourly_stats.csv"
+    if not stats_path.exists():
+        st.warning("Run the pipeline first to generate `weekly_hourly_stats.csv`.")
+        return
+
+    stats_df = pd.read_csv(stats_path)
+    consumption_matrix = (
+        stats_df.pivot(index="weekday", columns="hour", values="avg_kWh")
+        .reindex([d for d in WEEKDAY_ORDER if d in stats_df["weekday"].unique()])
+    )
+
+    eligible = add_offer_eligibility(scenarios.copy(), has_smart_meter=None)
+    # One row per plan using the highest discount tier (tiered plans have multiple rows)
+    plan_options = (
+        eligible
+        .groupby(["supplier_name", "plan_name", "time_restriction"], sort=False)["discount_pct"]
+        .max()
+        .reset_index()
+    )
+    plan_labels = [f"{r.supplier_name} — {r.plan_name}" for r in plan_options.itertuples()]
+
+    if plan_options.empty:
+        st.warning("No discount plans found in the scenarios file.")
+        return
+
+    selected_label = st.selectbox("Choose a plan", plan_labels)
+    idx = plan_labels.index(selected_label) if selected_label in plan_labels else 0
+    sel = plan_options.iloc[idx]
+
+    # Show a link to the provider's page so the user can verify details themselves
+    sel_url = scenarios.loc[
+        (scenarios["supplier_name"] == sel["supplier_name"]) &
+        (scenarios["plan_name"] == sel["plan_name"]),
+        "source_url",
+    ].iloc[0] if "source_url" in scenarios.columns else None
+    if sel_url:
+        st.markdown(f"[🔗 Verify this plan on the provider's site]({sel_url})")
+
+    st.info(
+        "💡 **What to look for:** the left chart shows when you use the most electricity (darker orange = more usage). "
+        "The right chart shows when this plan's discount applies (green cells = cheaper rate, red = full price). "
+        "The more your heavy-use hours overlap with the green zone, the more you'll actually save."
+    )
+
+    discount_pct = float(sel["discount_pct"])
+    discounted_rate = round(TARIFF * (1 - discount_pct / 100), 4)
+    day_to_idx = {day: i for i, day in enumerate(WEEKDAY_ORDER)}
+    price_matrix = np.full((len(WEEKDAY_ORDER), 24), TARIFF)
+
+    for d in extract_weekdays(sel["time_restriction"]):
+        for h in _hours_from_restriction(sel["time_restriction"]):
+            if d in day_to_idx:
+                price_matrix[day_to_idx[d], h] = discounted_rate
+
+    present_weekdays = [d for d in WEEKDAY_ORDER if d in consumption_matrix.index]
+    price_df = pd.DataFrame(
+        [price_matrix[day_to_idx[d]] for d in present_weekdays],
+        index=present_weekdays, columns=list(range(24)),
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.plotly_chart(
+            px.imshow(consumption_matrix, title="Your Consumption Profile (avg kWh)",
+                      color_continuous_scale="Oranges", aspect="auto",
+                      labels={"color": "avg kWh", "x": "Hour", "y": "Weekday"}),
+            width="stretch",
+        )
+    with col2:
+        st.plotly_chart(
+            px.imshow(price_df,
+                      title=f"{sel.supplier_name} — {sel.plan_name} (NIS/kWh)",
+                      color_continuous_scale="RdYlGn_r", aspect="auto",
+                      range_color=[TARIFF * 0.7, TARIFF],
+                      labels={"color": "NIS/kWh", "x": "Hour", "y": "Weekday"}),
+            width="stretch",
+        )

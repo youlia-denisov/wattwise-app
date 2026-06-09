@@ -1,0 +1,20 @@
+Metadata-Version: 2.4
+Name: electricity-consumption-analyser
+Version: 0.1.0
+Summary: Household electricity consumption analyser for the Israeli electricity market
+Requires-Python: >=3.8
+Requires-Dist: pandas>=2.0.0
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: matplotlib>=3.7.0
+Requires-Dist: seaborn>=0.12.0
+Requires-Dist: plotly>=5.15.0
+Requires-Dist: streamlit>=1.45.1
+Requires-Dist: openpyxl>=3.1.0
+Requires-Dist: python-dateutil>=2.8.2
+Requires-Dist: tqdm>=4.65.0
+Requires-Dist: requests>=2.31.0
+Requires-Dist: beautifulsoup4>=4.13.0
+Requires-Dist: scikit-learn>=1.3.0
+Requires-Dist: statsmodels>=0.14.0
+Provides-Extra: dev
+Requires-Dist: jupyter>=1.0.0; extra == "dev"
