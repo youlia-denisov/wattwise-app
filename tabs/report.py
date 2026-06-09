@@ -23,10 +23,10 @@ _REPORT_CSS = """
 """
 
 
-def render_report(load_report, project_root):
+def render_report(load_report, project_root, simple=False):
     # project_root is ROOT from the main file — the repo folder.
-    # It's used here to find outlier files and HTML charts that the pipeline writes
-    # into data/processed/ and outputs/html/ — these are shared, not per-user.
+    # simple=True hides local file sections (HTML visuals, outlier tables)
+    # that only make sense when running locally.
     st.header("Analysis Report")
     report_text = load_report()
 
@@ -47,8 +47,9 @@ def render_report(load_report, project_root):
     except ImportError:
         st.markdown(clean_report)
 
-    _render_html_visuals(project_root)
-    _render_outlier_tables(project_root)
+    if not simple:
+        _render_html_visuals(project_root)
+        _render_outlier_tables(project_root)
 
     with st.expander("View raw markdown"):
         st.code(report_text, language="markdown")

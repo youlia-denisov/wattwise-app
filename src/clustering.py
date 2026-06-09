@@ -142,6 +142,87 @@ def apply_cyclical_encoding(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_daily_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute daily-aggregate features and merge them onto every hourly row.
+
+    Why daily aggregates?
+    A single hourly kWh reading doesn't describe a day's behaviour.
+    Two days with the same total consumption can have very different shapes
+    (flat all day vs. sharp evening spike). By computing these aggregates
+    and attaching them to every row, KMeans can "see" the full-day context
+    for each measurement — not just the value at that one hour.
+
+    New columns added:
+    - daily_total_kwh  : sum of all kWh readings for that calendar day
+                         → separates high-demand days from low-demand days
+    - evening_peak     : mean kWh between 18:00–22:00 for that day
+                         → captures cooking / TV / lighting peak
+    - night_baseline   : mean kWh between 01:00–05:00 for that day
+                         → always-on devices (fridge, router) vs zero-use nights
+    - peak_to_baseline : log(1 + evening_peak / (night_baseline + 0.01))
+                         → shape of the day: high = sharp evening spike,
+                            low = flat profile; log keeps extreme values in check
+
+    Why NOT season or rolling averages?
+    With only 13 weeks of data, seasonal windows span nearly the whole dataset
+    and rolling averages smooth away the short-term patterns we want to find.
+    """
+    df = df.copy()
+
+    # Keep 'date' as a string (YYYY-MM-DD) so the merge key type matches
+    # the 'date' column already present in the CSV from preprocessing.
+    df["date"] = pd.to_datetime(df["datetime"]).dt.strftime("%Y-%m-%d")
+
+    # ── daily total ────────────────────────────────────────────────────────
+    daily_total = (
+        df.groupby("date")["kWh"]
+        .sum()
+        .rename("daily_total_kwh")
+    )
+
+    # ── evening peak (18:00–22:00) ─────────────────────────────────────────
+    evening_peak = (
+        df[df["hour"].between(18, 22)]
+        .groupby("date")["kWh"]
+        .mean()
+        .rename("evening_peak")
+    )
+
+    # ── night baseline (01:00–05:00) ───────────────────────────────────────
+    night_baseline = (
+        df[df["hour"].between(1, 5)]
+        .groupby("date")["kWh"]
+        .mean()
+        .rename("night_baseline")
+    )
+
+    # ── assemble and compute ratio ─────────────────────────────────────────
+    daily = pd.DataFrame({
+        "daily_total_kwh": daily_total,
+        "evening_peak":    evening_peak,
+        "night_baseline":  night_baseline,
+    })
+    # np.log1p(x) = log(1 + x): compresses large ratios gracefully.
+    # Epsilon 0.01 prevents division by zero on near-zero night readings.
+    daily["peak_to_baseline"] = np.log1p(
+        daily["evening_peak"] / (daily["night_baseline"] + 0.01)
+    )
+
+    # Merge back onto every hourly row that belongs to each day.
+    df = df.merge(daily, on="date", how="left")
+
+    n_missing = df[["daily_total_kwh", "evening_peak",
+                    "night_baseline", "peak_to_baseline"]].isna().any(axis=1).sum()
+    if n_missing > 0:
+        raise ValueError(
+            f"{n_missing} rows could not be matched to a daily aggregate. "
+            "Check that the 'datetime' column parses correctly."
+        )
+
+    return df
+
+
 def build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
     """
     Select and return the feature columns used for clustering.
@@ -150,13 +231,24 @@ def build_feature_matrix(df: pd.DataFrame) -> pd.DataFrame:
     - kWh              (consumption magnitude)
     - hour_sin/cos     (time of day, cyclical)
     - weekday_sin/cos  (day of week, cyclical)
-    - month_sin/cos    (season, cyclical)
+    - daily_total_kwh  (full-day consumption context)
+    - evening_peak     (evening demand for that day)
+    - night_baseline   (overnight floor for that day)
+    - peak_to_baseline (shape of the day's consumption curve)
+
+    Removed vs. original:
+    - month_sin/cos : only 3 months of data → near-zero variance, adds noise
+    - is_weekend    : was monopolising k=2 split; weekday_sin/cos already
+                      capture within-week variation
     """
     feature_cols = [
         "kWh",
-        "hour_sin", "hour_cos",
+        "hour_sin",    "hour_cos",
         "weekday_sin", "weekday_cos",
-        "month_sin", "month_cos",
+        "daily_total_kwh",
+        "evening_peak",
+        "night_baseline",
+        "peak_to_baseline",
     ]
     missing = [c for c in feature_cols if c not in df.columns]
     if missing:
@@ -271,12 +363,13 @@ def run_clustering(
     Steps:
     1. Load cleaned data.
     2. Add weekday number.
-    3. Apply cyclical encoding.
-    4. Scale features with RobustScaler.
-    5. (Optional) Compute and save elbow curve data if figure_dir is given.
-    6. Fit KMeans.
-    7. Assign cluster ranks.
-    8. Save clustered CSV and summary CSV.
+    3. Add daily aggregate features.
+    4. Apply cyclical encoding.
+    5. Scale features with RobustScaler.
+    6. (Optional) Compute and save elbow curve data if figure_dir is given.
+    7. Fit KMeans.
+    8. Assign cluster ranks.
+    9. Save clustered CSV and summary CSV.
 
     Parameters
     ----------
@@ -298,15 +391,20 @@ def run_clustering(
     # 2. Weekday number
     df = add_weekday_number(df)
 
-    # 3. Cyclical encoding
+    # 3. Daily aggregate features
+    # Must run before cyclical encoding so 'hour' is still a plain integer
+    # (between() comparisons need numeric hour, not sin/cos).
+    df = add_daily_features(df)
+
+    # 4. Cyclical encoding
     df = apply_cyclical_encoding(df)
 
-    # 4. Scale
+    # 5. Scale
     X = build_feature_matrix(df)
     scaler = RobustScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # 5. Elbow method (data only — plot is drawn in visualization.py)
+    # 6. Elbow method (data only — plot is drawn in visualization.py)
     if figure_dir is not None:
         figure_dir = Path(figure_dir)
         figure_dir.mkdir(parents=True, exist_ok=True)
@@ -315,14 +413,14 @@ def run_clustering(
         elbow_df.to_csv(figure_dir / "elbow_inertias.csv", index=False)
         print(f"  Elbow inertia data saved to {figure_dir / 'elbow_inertias.csv'}")
 
-    # 6. Fit KMeans
+    # 7. Fit KMeans
     km = fit_kmeans(X_scaled, n_clusters=n_clusters, random_state=random_state)
     df["cluster"] = km.labels_
 
-    # 7. Rank clusters by mean kWh
+    # 8. Rank clusters by mean kWh
     df = assign_cluster_ranks(df)
 
-    # 8. Save outputs
+    # 9. Save outputs
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
 

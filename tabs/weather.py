@@ -38,7 +38,7 @@ def render_weather(df_clean: pd.DataFrame):
         st.warning("No consumption data available. Please upload and process your file first.")
         return
 
-    # ── City selector ─────────────────────────────────────────────────────────
+    # City selector, uses list of 26 main Insraeli cities from the israel_cities module. Defaults to Tel Aviv if available.
     city_names = CITIES["city"].tolist()
     default_idx = city_names.index("Tel Aviv") if "Tel Aviv" in city_names else 0
 
@@ -80,6 +80,7 @@ def render_weather(df_clean: pd.DataFrame):
     _render_correlation_metrics(df_weather)
     st.divider()
     _render_dual_axis_trend(df_weather)
+    _render_rolling_averages(df_weather)
     _render_temp_band_chart(df_weather)
 
 
@@ -122,6 +123,48 @@ def _render_dual_axis_trend(df_weather):
     ))
     fig.update_layout(
         title="Daily Consumption vs Average Temperature",
+        xaxis_title="Date",
+        yaxis=dict(title="Daily kWh", side="left"),
+        yaxis2=dict(title="Avg Temperature (°C)", side="right", overlaying="y", showgrid=False),
+        legend=dict(x=0.01, y=0.99),
+    )
+    st.plotly_chart(fig, width="stretch")
+
+
+def _render_rolling_averages(df_weather):
+    st.subheader("7-Day Rolling Average: Consumption & Temperature")
+    st.markdown(
+        "Smooths out day-to-day noise to reveal longer-term trends. "
+        "A rising rolling temperature line alongside a rising kWh line confirms a seasonal relationship."
+    )
+    daily = (
+        df_weather.groupby("date")
+        .agg(daily_kWh=("kWh", "sum"), avg_temp=("temperature_c", "mean"))
+        .reset_index()
+        .sort_values("date")
+    )
+    daily["roll_kWh"]  = daily["daily_kWh"].rolling(7, min_periods=1).mean()
+    daily["roll_temp"] = daily["avg_temp"].rolling(7, min_periods=1).mean()
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=daily["date"], y=daily["daily_kWh"],
+        name="Daily kWh", line=dict(color="#f4a582", width=1), opacity=0.4,
+    ))
+    fig.add_trace(go.Scatter(
+        x=daily["date"], y=daily["roll_kWh"],
+        name="7-day avg kWh", line=dict(color="#e55c30", width=2.5), yaxis="y1",
+    ))
+    fig.add_trace(go.Scatter(
+        x=daily["date"], y=daily["avg_temp"],
+        name="Daily temp (°C)", line=dict(color="#92c5de", width=1), opacity=0.4, yaxis="y2",
+    ))
+    fig.add_trace(go.Scatter(
+        x=daily["date"], y=daily["roll_temp"],
+        name="7-day avg temp (°C)", line=dict(color="#4a90d9", width=2.5, dash="dot"), yaxis="y2",
+    ))
+    fig.update_layout(
+        title="7-Day Rolling Average — Consumption & Temperature",
         xaxis_title="Date",
         yaxis=dict(title="Daily kWh", side="left"),
         yaxis2=dict(title="Avg Temperature (°C)", side="right", overlaying="y", showgrid=False),

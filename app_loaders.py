@@ -56,7 +56,7 @@ def load_clustering_data(processed_dir: str):
 @st.cache_data
 def load_report(processed_dir: str):
     """Return the markdown report text, or None if the pipeline hasn't run yet."""
-    p = Path(processed_dir).parent / "summary_report.md"
+    p = Path(processed_dir).parent / "reports" / "summary_report.md"
     return p.read_text(encoding="utf-8") if p.exists() else None
 
 
