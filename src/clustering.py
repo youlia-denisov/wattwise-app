@@ -156,9 +156,9 @@ def add_daily_features(df: pd.DataFrame) -> pd.DataFrame:
     New columns added:
     - daily_total_kwh  : sum of all kWh readings for that calendar day
                          → separates high-demand days from low-demand days
-    - evening_peak     : mean kWh between 18:00–22:00 for that day
+    - evening_peak     : mean kWh between 17:00–22:00 for that day
                          → captures cooking / TV / lighting peak
-    - night_baseline   : mean kWh between 01:00–05:00 for that day
+    - night_baseline   : mean kWh between 23:00–06:00 for that day
                          → always-on devices (fridge, router) vs zero-use nights
     - peak_to_baseline : log(1 + evening_peak / (night_baseline + 0.01))
                          → shape of the day: high = sharp evening spike,
@@ -181,17 +181,17 @@ def add_daily_features(df: pd.DataFrame) -> pd.DataFrame:
         .rename("daily_total_kwh")
     )
 
-    # ── evening peak (18:00–22:00) ─────────────────────────────────────────
+    # ── evening peak (17:00–22:00) ─────────────────────────────────────────
     evening_peak = (
-        df[df["hour"].between(18, 22)]
+        df[df["hour"].between(17, 22)]
         .groupby("date")["kWh"]
         .mean()
         .rename("evening_peak")
     )
 
-    # ── night baseline (01:00–05:00) ───────────────────────────────────────
+    # ── night baseline (23:00–06:00) ───────────────────────────────────────
     night_baseline = (
-        df[df["hour"].between(1, 5)]
+        df[df["hour"].isin(list(range(23, 24)) + list(range(0, 7)))]
         .groupby("date")["kWh"]
         .mean()
         .rename("night_baseline")

@@ -85,15 +85,14 @@ def _render_time_of_day(f: pd.Series):
     st.subheader("Time-of-day ratios")
     st.caption(
         "What fraction of your total electricity falls in each part of the day? "
-        "These four windows sum to 1, so they are scale-invariant: a frugal household "
+        "These three windows sum to 1, so they are scale-invariant: a frugal household "
         "and a heavy-use household with the same daily routine get the same ratios."
     )
 
     ratios = {
-        "Morning\n06–09": f.get("ratio_morning", 0),
-        "Midday\n10–15":  f.get("ratio_midday",  0),
-        "Evening\n18–22": f.get("ratio_evening", 0),
-        "Night\n23–05":   f.get("ratio_night",   0),
+        "Day\n07–16":     f.get("ratio_day",     0),
+        "Evening\n17–22": f.get("ratio_evening", 0),
+        "Night\n23–06":   f.get("ratio_night",   0),
     }
     df_r = pd.DataFrame({"Period": list(ratios.keys()), "Fraction": list(ratios.values())})
 
@@ -104,7 +103,7 @@ def _render_time_of_day(f: pd.Series):
             df_r, x="Period", y="Fraction",
             text=df_r["Fraction"].map(lambda v: f"{v:.1%}"),
             color="Period",
-            color_discrete_sequence=["#70b8ff", "#6bda9a", "#FFB74D", "#9575CD"],
+            color_discrete_sequence=["#FFB74D", "#70b8ff", "#9575CD"],
             title="Share of daily consumption by time window",
         )
         fig.update_traces(textposition="outside")
@@ -112,9 +111,8 @@ def _render_time_of_day(f: pd.Series):
         st.plotly_chart(fig, width="stretch")
 
     with col2:
-        periods = ["Morning", "Midday", "Evening", "Night"]
-        values  = [f.get("ratio_morning", 0), f.get("ratio_midday", 0),
-                   f.get("ratio_evening", 0), f.get("ratio_night", 0)]
+        periods = ["Day", "Evening", "Night"]
+        values  = [f.get("ratio_day", 0), f.get("ratio_evening", 0), f.get("ratio_night", 0)]
         values_closed = values + [values[0]]
         periods_closed = periods + [periods[0]]
 
@@ -131,12 +129,12 @@ def _render_time_of_day(f: pd.Series):
         )
         st.plotly_chart(fig_r, width="stretch")
 
-    midday = f.get("ratio_midday", 0)
-    morning = f.get("ratio_morning", 0)
-    if midday > 0.22:
-        st.info("**High midday usage** — consistent with working from home or someone being home during the day.")
-    elif morning > 0.18:
-        st.info("**Prominent morning peak** — classic commuter pattern: appliances on in the morning, quiet house during the day.")
+    day     = f.get("ratio_day", 0)
+    evening = f.get("ratio_evening", 0)
+    if day > 0.45:
+        st.info("**High daytime usage** — consistent with working from home or someone being home during the day.")
+    elif evening > 0.40:
+        st.info("**Prominent evening peak** — classic after-work pattern: heavy usage in the evening hours.")
 
 
 def _render_weekday_weekend(f: pd.Series):

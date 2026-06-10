@@ -120,17 +120,6 @@ def render_sidebar(user_dir: Path, pipeline_available: bool, run_pipeline_fn) ->
 
         st.divider()
 
-        # ── VIEW MODE ──────────────────────────────────────────────────────────
-        view_mode = st.radio(
-            "View mode",
-            ["Simple", "Analyst"],
-            index=0,
-            horizontal=True,
-            help="Simple: overview, discounts, and savings calculator. Analyst: all tabs.",
-        )
-
-        st.divider()
-
         # ── CUSTOMER TYPE ──────────────────────────────────────────────────────
         with st.expander("🏷️ Eligible plan types", expanded=False):
             _offers_df = get_offers_df()
@@ -162,5 +151,4 @@ def render_sidebar(user_dir: Path, pipeline_available: bool, run_pipeline_fn) ->
         "tariff": sidebar_tariff,
         "has_smart_meter": sidebar_has_sm,
         "customer_types": sidebar_customer_types,
-        "view_mode": view_mode,
     }

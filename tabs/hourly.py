@@ -105,7 +105,7 @@ def render_hourly(df_clean, hourly, consumption_col, WEEKDAY_ORDER):
         margin=dict(t=20, b=40),
     )
 
-    st.plotly_chart(fig_range, use_container_width=True)
+    st.plotly_chart(fig_range, width="stretch")
 
     # ── Insight card ──────────────────────────────────────────────────────────
     peak_row = hourly_stats.loc[hourly_stats["mean"].idxmax()]

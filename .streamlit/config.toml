@@ -26,9 +26,14 @@ chartSequentialColors = [
 ]
 
 chartDivergingColors = [
-    "#d73027",  # negative / low
+    "#d73027",  # strong negative
+    "#f46d43",
     "#fdae61",
+    "#fee08b",
     "#ffffbf",  # midpoint
+    "#d9ef8b",
     "#a6d96a",
-    "#1a7f4b",  # positive / high
+    "#66bd63",
+    "#1a9850",
+    "#1a7f4b",  # strong positive
 ]

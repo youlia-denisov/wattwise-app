@@ -54,30 +54,27 @@ def time_of_day_ratios(df: pd.DataFrame) -> pd.Series:
     """
     What fraction of daily electricity falls in each part of the day?
 
-    These four windows sum to 1 by construction, which makes them scale-invariant —
+    These three windows sum to 1 by construction, which makes them scale-invariant —
     a heavy user and a light user with the same routine get the same ratios.
     That is exactly what we want for clustering behaviour, not quantity.
 
     Windows (hour ranges, 24-h clock):
-        morning   06-09  — getting ready, breakfast
-        midday    10-15  — working from home vs. empty house
-        evening   18-22  — cooking, TV, charging
-        night     23-05  — baseline / standby
+        day       07-16  — daytime activity
+        evening   17-22  — after-work peak (cooking, TV, charging)
+        night     23-06  — baseline / standby
     """
     h = _hourly(df)
     h["hour"] = h["datetime"].dt.hour
 
     total = h["kWh_hour"].sum()
 
-    morning = h.loc[h["hour"].between(6, 9), "kWh_hour"].sum()
-    midday  = h.loc[h["hour"].between(10, 15), "kWh_hour"].sum()
-    evening = h.loc[h["hour"].between(18, 22), "kWh_hour"].sum()
-    night   = h.loc[h["hour"].isin(list(range(23, 24)) + list(range(0, 6))), "kWh_hour"].sum()
+    day     = h.loc[h["hour"].between(7, 16), "kWh_hour"].sum()
+    evening = h.loc[h["hour"].between(17, 22), "kWh_hour"].sum()
+    night   = h.loc[h["hour"].isin(list(range(23, 24)) + list(range(0, 7))), "kWh_hour"].sum()
 
     return pd.Series(
         {
-            "ratio_morning": _safe_ratio(morning, total),
-            "ratio_midday":  _safe_ratio(midday,  total),
+            "ratio_day":     _safe_ratio(day,     total),
             "ratio_evening": _safe_ratio(evening, total),
             "ratio_night":   _safe_ratio(night,   total),
         }
@@ -188,7 +185,7 @@ def peak_features(df: pd.DataFrame) -> pd.Series:
     peak_to_mean  = _safe_ratio(hourly_mean.max(), overall_mean)
 
     # Fri=4, Sat=5 evenings vs. Mon-Thu=0-3 evenings
-    evening = h[h["hour"].between(18, 22)]
+    evening = h[h["hour"].between(17, 22)]
     we_evening = evening.loc[evening["dayofweek"].isin([4, 5]), "kWh_hour"].mean()
     wd_evening = evening.loc[evening["dayofweek"].isin([0, 1, 2, 3]), "kWh_hour"].mean()
 
@@ -213,7 +210,7 @@ def night_baseline(df: pd.DataFrame) -> pd.Series:
     """
     h = _hourly(df)
     h["hour"] = h["datetime"].dt.hour
-    night_mean = h.loc[h["hour"].between(0, 5), "kWh_hour"].mean()
+    night_mean = h.loc[h["hour"].isin(list(range(23, 24)) + list(range(0, 7))), "kWh_hour"].mean()
 
     return pd.Series({"night_baseline_kwh": night_mean})
 

@@ -146,7 +146,7 @@ def render_outlier_methods(df_clean: pd.DataFrame, consumption_col: str,
             rec_tag = " ✓ recommended" if method == rec_method else ""
             col.metric(f"{method}{rec_tag}", f"{flagged} readings ({pct:.1f}%)")
 
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.plotly_chart(fig_bar, width="stretch")
 
     st.divider()
 
@@ -187,7 +187,7 @@ def render_outlier_methods(df_clean: pd.DataFrame, consumption_col: str,
         yaxis_title="kWh per reading",
         margin=dict(t=10, b=10),
     )
-    st.plotly_chart(fig_box, use_container_width=True)
+    st.plotly_chart(fig_box, width="stretch")
     st.caption(
         "The box covers the middle 50% of readings. The whiskers extend to the IQR fences. "
         "Dots beyond the whiskers are flagged outliers."
@@ -195,7 +195,7 @@ def render_outlier_methods(df_clean: pd.DataFrame, consumption_col: str,
 
     tl = _timeline_fig(df_clean, res.results_by_method["IQR"].index, "#1a7f4b", "IQR")
     if tl:
-        st.plotly_chart(tl, use_container_width=True)
+        st.plotly_chart(tl, width="stretch")
         st.caption("Highlighted dots are the readings IQR flagged. Clusters in time may indicate a seasonal event, a faulty appliance, or a data recording issue.")
 
     st.divider()
@@ -239,7 +239,7 @@ def render_outlier_methods(df_clean: pd.DataFrame, consumption_col: str,
         )
 
     fig_hist = _histogram_with_fences(kwh, p_sig["lower"], p_sig["upper"], "3-Sigma", "#1a4f7f")
-    st.plotly_chart(fig_hist, use_container_width=True)
+    st.plotly_chart(fig_hist, width="stretch")
     st.caption(
         "The dashed lines are the 3-sigma fences. Readings to the right of the upper fence are flagged. "
         "If the fence sits well inside the bulk of readings, the data is too skewed for this method."
@@ -247,7 +247,7 @@ def render_outlier_methods(df_clean: pd.DataFrame, consumption_col: str,
 
     tl = _timeline_fig(df_clean, res.results_by_method["3-Sigma"].index, "#1a4f7f", "3-Sigma")
     if tl:
-        st.plotly_chart(tl, use_container_width=True)
+        st.plotly_chart(tl, width="stretch")
         st.caption("Highlighted dots are the readings 3-Sigma flagged.")
 
     st.divider()

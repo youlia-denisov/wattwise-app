@@ -80,7 +80,7 @@ def render_overview(
                     labels={"x": "Hour of day", "y": "Day of week", "color": "kWh"},
                     aspect="auto",
                 ),
-                use_container_width=True,
+                width="stretch",
             )
             st.caption(
                 "Each cell shows the average kWh for that hour and day combination. "

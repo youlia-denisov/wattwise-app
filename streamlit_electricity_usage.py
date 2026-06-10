@@ -38,23 +38,95 @@ pio.templates.default = "plotly+app_theme"
 # Must be the first Streamlit call in the script.
 st.set_page_config(page_title="My Electricity Dashboard", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 st.title("⚡ WattWise ")
-st.markdown("### Household Electricity Consumption and Tariff Savings Analyzer")
+
+col_title, col_mode = st.columns([3, 1])
+with col_title:
+    st.markdown("### Household Electricity Consumption and Tariff Savings Analyzer")
+with col_mode:
+    view_mode = st.radio(
+        "View mode",
+        ["Simple", "Analyst"],
+        index=0,
+        horizontal=True,
+        help="Simple: overview, discounts, and savings calculator. Analyst: all tabs.",
+    )
 #st.markdown("### Smart analysis of your household electricity usage")
 # Place to custom CSS to make the sidebar font a bit bigger and more readable.
 st.markdown("""
 <style>
+/* ── Global font ─────────────────────────────────────────── */
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+}
+
+/* ── Eggshell background ─────────────────────────────────── */
+.stApp {
+    background-color: #FAF7F1;
+}
+
+/* Keep sidebar slightly lighter */
 [data-testid="stSidebar"] {
+    background-color: #EDE7DA;
     font-size: 1.2rem;
 }
-</style>
-""", unsafe_allow_html=True)
 
-st.markdown("""
-    <style>
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
-    </style>
+/* ── App-like card frames around Plotly charts ───────────── */
+[data-testid="stPlotlyChart"] {
+    background: #FFFFFF;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    padding: 16px 12px 8px 12px;
+    margin-bottom: 8px;
+}
+
+/* ── Metric cards get a subtle frame too ─────────────────── */
+[data-testid="stMetric"] {
+    background: #FFFFFF;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
+    padding: 12px 16px;
+}
+
+/* ── Unified callout cards (st.info / warning / success / error) ── */
+[data-testid="stAlert"] {
+    background: #FFFFFF !important;
+    border-radius: 10px !important;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08) !important;
+    border: none !important;
+    padding: 14px 18px !important;
+}
+
+/* Re-add left accent border per severity */
+[data-testid="stAlert"][data-baseweb="notification"] {
+    border-left: 4px solid #1c83e1 !important;  /* info  — blue   */
+}
+div[data-testid="stAlert"].st-emotion-cache-1y7vd64,
+div[data-testid="stAlert"][kind="success"] {
+    border-left: 4px solid #21c354 !important;  /* success — green */
+}
+
+/* Fallback: target by icon colour class that Streamlit injects */
+/* info */
+[data-testid="stAlert"]:has(svg[fill="#1c83e1"]),
+[data-testid="stAlert"]:has(svg[color="#1c83e1"]) {
+    border-left: 4px solid #1c83e1 !important;
+}
+/* success */
+[data-testid="stAlert"]:has(svg[fill="#21c354"]),
+[data-testid="stAlert"]:has(svg[color="#21c354"]) {
+    border-left: 4px solid #21c354 !important;
+}
+/* warning */
+[data-testid="stAlert"]:has(svg[fill="rgb(255, 227, 18)"]),
+[data-testid="stAlert"]:has(svg[fill="#ffe312"]) {
+    border-left: 4px solid #e6a817 !important;
+}
+/* error */
+[data-testid="stAlert"]:has(svg[fill="rgb(255, 108, 108)"]),
+[data-testid="stAlert"]:has(svg[fill="#ff6c6c"]) {
+    border-left: 4px solid #e05252 !important;
+}
+</style>
 """, unsafe_allow_html=True)
 
 # ── PROJECT ROOT & PYTHON PATH ────────────────────────────────────────────────
@@ -148,8 +220,6 @@ from tabs import (
     render_weather, render_report, render_about,
     render_behavior_profile, render_outlier_methods,
 )
-
-view_mode = sidebar["view_mode"]
 
 if view_mode == "Simple":
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
