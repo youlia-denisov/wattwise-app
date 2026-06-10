@@ -1,0 +1,34 @@
+[theme]
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,600;0,700;1,400&display=swap, sans-serif"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,600;0,700;1,400&display=swap, sans-serif"
+
+# Chart series colours — applied automatically by Plotly, Altair, and Vega-Lite.
+# Categorical: used for distinct groups (e.g. bar chart series, scatter categories).
+# Sequential: used for ordered/gradient scales (e.g. heatmaps, choropleth maps).
+# Diverging: used for scales with a meaningful midpoint (e.g. +/- deviation).
+chartCategoricalColors = [
+    "#4a90d9",  # blue      — primary series
+    "#1a7f4b",  # green     — secondary series
+    "#e55c30",  # orange    — tertiary series
+    "#9b59b6",  # purple
+    "#2ca25f",  # mid green
+    "#d73027",  # red
+    "#70b8ff",  # light blue
+    "#1DB87E",  # bright green
+]
+
+chartSequentialColors = [
+    "#eaf4fb",  # lightest blue
+    "#b3d4f0",
+    "#70b8ff",
+    "#4a90d9",
+    "#1a4f7f",  # darkest blue
+]
+
+chartDivergingColors = [
+    "#d73027",  # negative / low
+    "#fdae61",
+    "#ffffbf",  # midpoint
+    "#a6d96a",
+    "#1a7f4b",  # positive / high
+]

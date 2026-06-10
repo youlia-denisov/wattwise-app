@@ -16,12 +16,27 @@ import tempfile
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-# Try to import config.py for shared constants. If it doesn't exist (e.g. on another machine), use fallback values.
+
+# Plotly's default template is a bit plain, so we customize it to better match Streamlit's style.
+import plotly.io as pio
+import plotly.graph_objects as go
+
+pio.templates["app_theme"] = go.layout.Template(
+    layout=dict(
+        font=dict(family="Inter, sans-serif", size=13),
+        paper_bgcolor="rgba(0,0,0,0)",   # transparent — inherits Streamlit background
+        plot_bgcolor="rgba(0,0,0,0)",
+        hoverlabel=dict(font_family="Inter, sans-serif"),
+        xaxis=dict(showgrid=True, gridcolor="#e9ecef", gridwidth=1),
+        yaxis=dict(showgrid=True, gridcolor="#e9ecef", gridwidth=1),
+    )
+)
+pio.templates.default = "plotly+app_theme"
 
 
 # ── PAGE CONFIG ───────────────────────────────────────────────────────────────
 # Must be the first Streamlit call in the script.
-st.set_page_config(page_title="Electricity Dashboard", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="My Electricity Dashboard", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 st.title("⚡ WattWise ")
 st.markdown("### Household Electricity Consumption and Tariff Savings Analyzer")
 #st.markdown("### Smart analysis of your household electricity usage")
