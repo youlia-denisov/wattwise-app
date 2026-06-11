@@ -2,6 +2,11 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
+try:
+    from features import night_baseline
+except ImportError:
+    from src.features import night_baseline
+
 
 def render_overview(
     daily_totals, date_col, daily_value_col, df_clean,
@@ -31,7 +36,7 @@ def render_overview(
         labels = ("Total Consumption", "Days Analyzed", "Avg Daily", "Peak Day")
 
     # ── Key metrics ──────────────────────────────────────────────────────────
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     total_kwh = pd.to_numeric(daily_totals[daily_value_col], errors="coerce").sum()
     with col1:
         st.metric(labels[0], f"{total_kwh:,.1f} kWh")
@@ -41,6 +46,31 @@ def render_overview(
         st.metric(labels[2], f"{safe_mean(daily_totals[daily_value_col]):.1f} kWh")
     with col4:
         st.metric(labels[3], f"{safe_max(daily_totals[daily_value_col]):.1f} kWh")
+    with col5:
+        baseline_label = "Min. Consumption Baseline" if not simple else "Minimal Consumption"
+        try:
+            df_nb = df_clean.copy()
+            df_nb["datetime"] = pd.to_datetime(df_nb["datetime"])
+            if "kWh" not in df_nb.columns:
+                kwh_col = next(
+                    (c for c in df_nb.columns if any(w in c.lower() for w in ["kwh", "kwatt", "consumption"])),
+                    None,
+                )
+                if kwh_col:
+                    df_nb = df_nb.rename(columns={kwh_col: "kWh"})
+            nb_series = night_baseline(df_nb)
+            nb_val    = nb_series.get("min_consumption_baseline_kwh", float("nan"))
+            nb_str    = f"{nb_val:.2f} kWh/h" if pd.notna(nb_val) else "N/A"
+        except Exception:
+            nb_str = "N/A"
+        st.metric(
+            baseline_label, nb_str,
+            help=(
+                "Average electricity used between 23:00 and 07:00, when the household "
+                "is asleep. This is your unavoidable standby load — fridges, routers, "
+                "and always-on devices. Below 0.10 kWh/h is excellent; above 0.20 is worth investigating."
+            ),
+        )
 
     # ── Daily line chart ──────────────────────────────────────────────────────
     if simple:

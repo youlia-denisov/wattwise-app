@@ -502,7 +502,7 @@ class TestFeatures(unittest.TestCase):
         If they don't, the clustering distances are distorted.
         """
         ratios = time_of_day_ratios(self.df)
-        total = ratios["ratio_day"] + ratios["ratio_evening"] + ratios["ratio_night"]
+        total = ratios["daytime_activity_share"] + ratios["ratio_evening"] + ratios["ratio_night"]
         self.assertAlmostEqual(total, 1.0, places=5)
 
     def test_time_of_day_ratios_all_nonnegative(self):

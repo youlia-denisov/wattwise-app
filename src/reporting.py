@@ -65,9 +65,9 @@ def _gfm_table(df, columns, n=10):
 
 def _derive_persona(f):
     """Map feature values to a household persona dict (emoji, label, tagline, color)."""
-    ratio_day     = f.get("ratio_day",     0)
-    ratio_night   = f.get("ratio_night",   0)
-    ratio_evening = f.get("ratio_evening", 0)
+    ratio_day     = f.get("daytime_activity_share", 0)
+    ratio_night   = f.get("ratio_night",            0)
+    ratio_evening = f.get("ratio_evening",          0)
     weekend_ratio = f.get("weekend_ratio", 1)
     routine_score = f.get("routine_score", 0.5)
 
@@ -134,13 +134,34 @@ def _build_insights(f):
             wr_val, wr_desc = "Similar on both days", "Your weekday and weekend usage are about the same."
         insights.append(dict(icon="📆", title="Weekday vs weekend", value=wr_val, desc=wr_desc, status="info"))
 
-    nb = f.get("night_baseline_kwh", None)
+    nb = f.get("min_consumption_baseline_kwh", None)
     if nb is not None and not math.isnan(float(nb)):
         if nb > 0.20:
-            nb_val, nb_desc, nb_st = "{:.2f} kWh/h standby".format(nb), "Your standby load is high — always-on devices may be adding up.", "warn"
+            nb_val  = "{:.2f} kWh/h".format(nb)
+            nb_desc = (
+                "This is your Minimal Consumption Baseline — electricity your home "
+                "uses even when everyone is asleep (fridges, routers, standby devices). "
+                "Your level is above average: worth checking for always-on appliances "
+                "that could be switched off or replaced."
+            )
+            nb_st = "warn"
+        elif nb > 0.10:
+            nb_val  = "{:.2f} kWh/h".format(nb)
+            nb_desc = (
+                "This is your Minimal Consumption Baseline — the unavoidable overnight "
+                "draw from fridges, routers, and standby electronics. "
+                "Your level is typical for a modern home."
+            )
+            nb_st = "info"
         else:
-            nb_val, nb_desc, nb_st = "{:.2f} kWh/h standby".format(nb), "Low standby load — your appliances are not drawing much power overnight.", "good"
-        insights.append(dict(icon="🔌", title="Overnight standby", value=nb_val, desc=nb_desc, status=nb_st))
+            nb_val  = "{:.2f} kWh/h".format(nb)
+            nb_desc = (
+                "This is your Minimal Consumption Baseline — electricity consumed "
+                "while the household sleeps. Your standby load is very low, "
+                "suggesting well-managed or energy-efficient appliances."
+            )
+            nb_st = "good"
+        insights.append(dict(icon="🔌", title="Minimal Consumption Baseline", value=nb_val, desc=nb_desc, status=nb_st))
 
     ms = f.get("morning_shift_hours", None)
     if ms is not None and not math.isnan(float(ms)):

@@ -33,7 +33,7 @@ def render_report(load_report, project_root, simple=False):
       - HTML segments     -> st.markdown(unsafe_allow_html=True) directly,
                              so <div> tags are never double-processed.
     """
-    st.header("Analysis Report")
+    #st.header("Analysis Report")
     report_text = load_report()
 
     if report_text is None:

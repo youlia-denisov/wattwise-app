@@ -70,13 +70,13 @@ def time_of_day_ratios(df: pd.DataFrame) -> pd.Series:
 
     day     = h.loc[h["hour"].between(7, 16), "kWh_hour"].sum()
     evening = h.loc[h["hour"].between(17, 22), "kWh_hour"].sum()
-    night   = h.loc[h["hour"].isin(list(range(23, 24)) + list(range(0, 7))), "kWh_hour"].sum()
+    night = h.loc[(h["hour"] >= 23) | (h["hour"] < 7), "kWh_hour"].sum()
 
     return pd.Series(
         {
-            "ratio_day":     _safe_ratio(day,     total),
-            "ratio_evening": _safe_ratio(evening, total),
-            "ratio_night":   _safe_ratio(night,   total),
+            "daytime_activity_share": _safe_ratio(day,     total),
+            "ratio_evening":          _safe_ratio(evening, total),
+            "ratio_night":            _safe_ratio(night,   total),
         }
     )
 
@@ -108,7 +108,7 @@ def weekday_weekend_features(df: pd.DataFrame) -> pd.Series:
     def _peak_hour(sub: pd.DataFrame) -> float:
         if sub.empty:
             return np.nan
-        return sub.groupby("hour")["kWh_hour"].mean().idxmax()
+        return float(sub.groupby("hour")["kWh_hour"].mean().idxmax())
 
     wd_peak_hour = _peak_hour(morning_hours[morning_hours["is_weekend"] == 0])
     we_peak_hour = _peak_hour(morning_hours[morning_hours["is_weekend"] == 1])
@@ -202,17 +202,27 @@ def peak_features(df: pd.DataFrame) -> pd.Series:
 
 def night_baseline(df: pd.DataFrame) -> pd.Series:
     """
-    Average kWh between midnight and 5am.
+    Minimal Consumption Baseline — average kWh/hour between 23:00 and 07:00.
 
-    This captures standby/always-on load: servers, fish tanks, medical devices,
-    or simply poor insulation with always-on heating. It's a raw value (not a ratio)
-    because absolute nighttime draw is meaningful on its own.
+    This is the electricity your household cannot switch off: fridges, routers,
+    heating/cooling systems, medical devices, fish tanks, servers, standby
+    electronics. Because everyone is typically asleep during this window,
+    intentional activity is near zero — what remains is the irreducible floor.
+
+    It is a raw absolute value (not a ratio) because the *scale* matters here:
+        < 0.10 kWh/h  — very low standby; efficient household
+        0.10–0.20     — typical modern home
+        > 0.20 kWh/h  — worth investigating; always-on appliances may be costing
+                        money even when no one is actively using electricity
+
+    Unlike the time-of-day ratios, this number does not change when overall
+    consumption rises or falls — it isolates the baseline independent of habits.
     """
     h = _hourly(df)
     h["hour"] = h["datetime"].dt.hour
-    night_mean = h.loc[h["hour"].isin(list(range(23, 24)) + list(range(0, 7))), "kWh_hour"].mean()
+    night_mean = h.loc[(h["hour"] >= 23) | (h["hour"] < 7), "kWh_hour"].mean()
 
-    return pd.Series({"night_baseline_kwh": night_mean})
+    return pd.Series({"min_consumption_baseline_kwh": night_mean})
 
 
 # ---- master function ---------------------------------------------------------

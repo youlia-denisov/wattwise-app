@@ -87,9 +87,9 @@ def _derive_persona(f: pd.Series) -> dict:
     Map feature values to a single human-readable household persona.
     Returns a dict with: emoji, label, tagline, color.
     """
-    ratio_day     = f.get("ratio_day",     0)
-    ratio_night   = f.get("ratio_night",   0)
-    ratio_evening = f.get("ratio_evening", 0)
+    ratio_day     = f.get("daytime_activity_share", 0)
+    ratio_night   = f.get("ratio_night",            0)
+    ratio_evening = f.get("ratio_evening",          0)
     weekend_ratio = f.get("weekend_ratio", 1)
     routine_score = f.get("routine_score", 0.5)
 
@@ -207,14 +207,35 @@ def _build_insights(f: pd.Series) -> list[dict]:
         insights.append(dict(icon="📆", title="Weekday vs weekend", value=wr_label,
                              desc=wr_desc, status=wr_status))
 
-    # --- Standby load ---
-    nb = f.get("night_baseline_kwh", None)
-    if nb is not None:
+    # --- Minimal Consumption Baseline ---
+    nb = f.get("min_consumption_baseline_kwh", None)
+    if nb is not None and not pd.isna(nb):
         if nb > 0.20:
-            nb_label, nb_desc, nb_status = f"{nb:.2f} kWh/h standby", "Your standby load is high — always-on devices may be adding up.", "warn"
+            nb_label  = f"{nb:.2f} kWh/h"
+            nb_desc   = (
+                "This is your Minimal Consumption Baseline — electricity your home uses "
+                "even when everyone is asleep (fridges, routers, standby devices). "
+                "Your level is above average: worth checking for always-on appliances "
+                "that could be switched off or replaced."
+            )
+            nb_status = "warn"
+        elif nb > 0.10:
+            nb_label  = f"{nb:.2f} kWh/h"
+            nb_desc   = (
+                "This is your Minimal Consumption Baseline — the unavoidable overnight draw "
+                "from fridges, routers, and standby electronics. "
+                "Your level is typical for a modern home."
+            )
+            nb_status = "info"
         else:
-            nb_label, nb_desc, nb_status = f"{nb:.2f} kWh/h standby", "Low standby load — your appliances are not drawing much power overnight.", "good"
-        insights.append(dict(icon="🔌", title="Overnight standby", value=nb_label,
+            nb_label  = f"{nb:.2f} kWh/h"
+            nb_desc   = (
+                "This is your Minimal Consumption Baseline — electricity consumed while "
+                "the household sleeps. Your standby load is very low, suggesting "
+                "well-managed or energy-efficient appliances."
+            )
+            nb_status = "good"
+        insights.append(dict(icon="🔌", title="Minimal Consumption Baseline", value=nb_label,
                              desc=nb_desc, status=nb_status))
 
     # --- Sleep-in score ---
@@ -294,7 +315,7 @@ def _render_time_of_day(f: pd.Series):
     )
 
     ratios = {
-        "Day\n07–16":     f.get("ratio_day",     0),
+        "Day\n07–16":     f.get("daytime_activity_share", 0),
         "Evening\n17–22": f.get("ratio_evening", 0),
         "Night\n23–06":   f.get("ratio_night",   0),
     }
@@ -317,7 +338,7 @@ def _render_time_of_day(f: pd.Series):
 
     with col2:
         periods = ["Day", "Evening", "Night"]
-        values  = [f.get("ratio_day", 0), f.get("ratio_evening", 0), f.get("ratio_night", 0)]
+        values  = [f.get("daytime_activity_share", 0), f.get("ratio_evening", 0), f.get("ratio_night", 0)]
         values_closed  = values + [values[0]]
         periods_closed = periods + [periods[0]]
 
@@ -334,7 +355,7 @@ def _render_time_of_day(f: pd.Series):
         )
         st.plotly_chart(fig_r, width="stretch")
 
-    day     = f.get("ratio_day", 0)
+    day     = f.get("daytime_activity_share", 0)
     evening = f.get("ratio_evening", 0)
     night   = f.get("ratio_night", 0)
 

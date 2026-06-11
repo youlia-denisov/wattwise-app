@@ -226,8 +226,8 @@ from tabs import (
 )
 
 if view_mode == "Simple":
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "Overview", "My Profile", "Calculate my savings", "Best deals", "Report", "About",
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "Overview", "My Profile", "Weather", "Calculate my savings", "Best deals", "Report", "About",
     ])
 
     with tab1:
@@ -237,6 +237,8 @@ if view_mode == "Simple":
     with tab2:
         render_behavior_profile(df_clean, simple=True)
     with tab3:
+        render_weather(df_clean, simple=True)
+    with tab4:
         render_calculator(
             df_clean,
             get_offers_df(),
@@ -244,12 +246,12 @@ if view_mode == "Simple":
             has_smart_meter=sidebar["has_smart_meter"],
             customer_types=sidebar["customer_types"],
         )
-    with tab4:
+    with tab5:
         render_discounts(scenarios, PROCESSED_DIR, WEEKDAY_ORDER, sidebar["tariff"],
                          add_offer_eligibility, extract_weekdays, _hours_from_restriction)
-    with tab5:
-        render_report(lambda: load_report(str(PROCESSED_DIR)), ROOT, simple=True)
     with tab6:
+        render_report(lambda: load_report(str(PROCESSED_DIR)), ROOT, simple=True)
+    with tab7:
         render_about(df_clean, daily_totals, hourly)
 
 else:

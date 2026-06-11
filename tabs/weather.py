@@ -27,18 +27,25 @@ def _fetch_weather(city: str, start_date: str, end_date: str) -> pd.DataFrame:
     )
 
 
-def render_weather(df_clean: pd.DataFrame):
-    st.header("Weather & Electricity")
-    st.markdown(
-        "Does your electricity use go up when it's hot? Does rain make a difference? "
-        "This tab lines up your hourly consumption with weather data to find out."
-    )
+def render_weather(df_clean: pd.DataFrame, simple: bool = False):
+    if simple:
+        st.header("Does Temperature Affect Your Usage?")
+        st.markdown(
+            "The chart below shows your daily electricity use alongside the average temperature. "
+            "If the two lines move together, your heating or cooling is likely a major driver of your bill."
+        )
+    else:
+        st.header("Weather & Electricity")
+        st.markdown(
+            "Does your electricity use go up when it's hot? Does rain make a difference? "
+            "This tab lines up your hourly consumption with weather data to find out."
+        )
 
     if df_clean is None or "datetime" not in df_clean.columns:
         st.warning("No consumption data available. Please upload and process your file first.")
         return
 
-    # City selector, uses list of 26 main Insraeli cities from the israel_cities module. Defaults to Tel Aviv if available.
+    # City selector, uses list of 26 main Israeli cities from the israel_cities module. Defaults to Tel Aviv if available.
     city_names = CITIES["city"].tolist()
     default_idx = city_names.index("Tel Aviv") if "Tel Aviv" in city_names else 0
 
@@ -75,6 +82,15 @@ def render_weather(df_clean: pd.DataFrame):
 
     if df_weather["temperature_c"].isna().all():
         st.warning("Weather data was fetched but could not be merged with your consumption data.")
+        return
+
+    if simple:
+        _render_dual_axis_trend(df_weather)
+        st.caption(
+            "The orange line shows your daily electricity use (kWh). "
+            "The blue dashed line shows the average temperature. "
+            "When they move in the same direction, temperature is influencing your bill."
+        )
         return
 
     _render_correlation_metrics(df_weather)
