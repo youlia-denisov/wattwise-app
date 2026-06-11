@@ -64,6 +64,31 @@ TIME_PATTERN = re.compile(r"(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})")
 # RTL control characters to strip from Hebrew text.
 RTL_CHARS = re.compile(r"[‎‏‪-‮⁦-⁩]")
 
+# ── CUSTOMER-TYPE DETECTION PATTERNS ─────────────────────────────────────────
+# Each entry: (customer_type_label, compiled_regex)
+# The patterns match Hebrew/English phrases that indicate plan exclusivity.
+CUSTOMER_TYPE_PATTERNS = [
+    ("Hot subscriber",     re.compile(r"ללקוחות הוט|HOT mobile|HOT/NEXT|ללקוחות Hot", re.IGNORECASE)),
+    ("Cellcom subscriber", re.compile(r"בלעדי בסלקום|ללקוחות סלקום", re.IGNORECASE)),
+    ("Bezeq subscriber",   re.compile(r"ללקוחות בזק|בלעדי בזק", re.IGNORECASE)),
+    ("Partner subscriber", re.compile(r"ללקוחות פרטנר|בלעדי פרטנר", re.IGNORECASE)),
+    ("Amisragas customer", re.compile(r"ללקוחות אמישראגז|מנויים על החשמל והגז", re.IGNORECASE)),
+    ("Pazgas customer",    re.compile(r"ללקוחות פזגז|בלעדי פזגז", re.IGNORECASE)),
+]
+
+
+def _detect_customer_type(plan_name: str, context: str) -> str:
+    """
+    Return the customer type required to access a plan.
+    Returns 'All' if the plan is open to any customer.
+    Checks plan name first, then context text.
+    """
+    combined = f"{plan_name} {context}"
+    for label, pattern in CUSTOMER_TYPE_PATTERNS:
+        if pattern.search(combined):
+            return label
+    return "All"
+
 
 def _clean(text: str) -> str:
     """Remove RTL marks and normalize whitespace."""
@@ -179,7 +204,7 @@ def _scrape_page(url: str) -> list[dict]:
                     "discount_note":       discount_note,
                     "requires_smart_meter": requires_smart_meter,
                     "time_restriction":    time_restriction,
-                    "customer_type":       "All",   # refined below if we detect customer-specific text
+                    "customer_type":       _detect_customer_type(plan_name, card_text),
                     "context":             card_text[:300],
                     "deal_url":            deal_url,
                     "source_url":          url,

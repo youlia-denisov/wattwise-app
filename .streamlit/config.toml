@@ -18,11 +18,16 @@ chartCategoricalColors = [
 ]
 
 chartSequentialColors = [
-    "#eaf4fb",  # lightest blue
-    "#b3d4f0",
-    "#70b8ff",
-    "#4a90d9",
-    "#1a4f7f",  # darkest blue
+    "#eaf4fb",  # 1 — lightest blue
+    "#cde4f5",  # 2
+    "#b3d4f0",  # 3
+    "#91c2e8",  # 4
+    "#70b8ff",  # 5
+    "#5aa4eb",  # 6
+    "#4a90d9",  # 7
+    "#3672b0",  # 8
+    "#255490",  # 9
+    "#1a4f7f",  # 10 — darkest blue
 ]
 
 chartDivergingColors = [

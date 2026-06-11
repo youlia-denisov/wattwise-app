@@ -1,13 +1,12 @@
 """
-Behavioral fingerprint tab.
+Behavioural fingerprint tab.
 
 Calls build_user_features() from src/features.py on the full cleaned dataset
 and renders the results as an interactive dashboard.
 
-The features are grouped into four sections that mirror the feature-engineering
-module: time-of-day ratios, weekday/weekend, regularity, and peak behaviour.
-Each number is shown with a plain-English interpretation so the tab is readable
-even without a data-science background.
+Two render modes:
+  simple=False (default / Analyst) — full detail with charts and expanders.
+  simple=True  (Simple mode)       — one-page summary card with persona + top insights.
 """
 
 import streamlit as st
@@ -16,39 +15,39 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 
-def render_behavior_profile(df_clean):
-    st.header("Behavioural Fingerprint")
-    st.html(
-        "This tab distils your entire consumption history into a handful of "
-        "interpretable numbers — each one capturing a distinct aspect of how "
-        "your household uses electricity. Together they form your **behavioural "
-        "fingerprint**: a compact portrait that distinguishes WFH workers from "
-        "office commuters, early risers from night owls, and routine households "
-        "from unpredictable ones."
-    )
+# ─────────────────────────────────────────────────────────────────────────────
+# Public entry point
+# ─────────────────────────────────────────────────────────────────────────────
+
+def render_behavior_profile(df_clean, simple: bool = False):
+    st.header("Your Household Profile" if simple else "Usage Habits")
 
     features = _compute_features(df_clean)
     if features is None:
         return
 
-    _render_time_of_day(features)
-    st.divider()
-    _render_weekday_weekend(features)
-    st.divider()
-    _render_regularity(features)
-    st.divider()
-    _render_peak_behaviour(features)
+    persona = _derive_persona(features)
+
+    if simple:
+        _render_simple_summary(features, persona)
+    else:
+        _render_persona_banner(features, persona)
+        st.divider()
+        _render_time_of_day(features)
+        st.divider()
+        _render_weekday_weekend(features)
+        st.divider()
+        _render_regularity(features)
+        st.divider()
+        _render_peak_behaviour(features)
 
 
-# ── feature computation ───────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Feature computation
+# ─────────────────────────────────────────────────────────────────────────────
 
 @st.cache_data
 def _compute_features(df_clean: pd.DataFrame) -> pd.Series | None:
-    """
-    Calls build_user_features from src/features.py.
-    Renames the kWh column if needed so feature functions always receive
-    a column literally called 'kWh'.
-    """
     try:
         from src.features import build_user_features
     except ImportError as e:
@@ -79,14 +78,219 @@ def _compute_features(df_clean: pd.DataFrame) -> pd.Series | None:
         return None
 
 
-# ── section renderers ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Persona logic
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _derive_persona(f: pd.Series) -> dict:
+    """
+    Map feature values to a single human-readable household persona.
+    Returns a dict with: emoji, label, tagline, color.
+    """
+    ratio_day     = f.get("ratio_day",     0)
+    ratio_night   = f.get("ratio_night",   0)
+    ratio_evening = f.get("ratio_evening", 0)
+    weekend_ratio = f.get("weekend_ratio", 1)
+    routine_score = f.get("routine_score", 0.5)
+
+    if ratio_day > 0.45:
+        return dict(emoji="🏠", label="Home Dweller",
+                    tagline="Most of your electricity is used during the day — you're home a lot!",
+                    color="#FFB74D")
+    if ratio_night > 0.25:
+        return dict(emoji="🌙", label="Night Owl",
+                    tagline="Your household comes alive at night — late evenings are your peak time.",
+                    color="#9575CD")
+    if weekend_ratio > 1.35:
+        return dict(emoji="🎉", label="Weekend Warrior",
+                    tagline="You use noticeably more electricity on weekends — home is where the weekend is.",
+                    color="#4DB6AC")
+    if routine_score > 0.70:
+        return dict(emoji="🕐", label="Clockwork Household",
+                    tagline="Your daily routine is very consistent — predictable and efficient.",
+                    color="#64B5F6")
+    if ratio_evening > 0.40:
+        return dict(emoji="🌆", label="After-Work Household",
+                    tagline="Evenings are your busiest time — classic after-work energy spike.",
+                    color="#F06292")
+    return dict(emoji="⚖️", label="Balanced Household",
+                tagline="Your usage is spread fairly evenly — no single pattern dominates.",
+                color="#81C784")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Simple-mode: one-card summary
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _render_simple_summary(f: pd.Series, persona: dict):
+    """Compact single-page view for Simple mode."""
+
+    # Persona banner
+    st.markdown(
+        f"""
+        <div style="
+            background: {persona['color']}22;
+            border-left: 5px solid {persona['color']};
+            border-radius: 10px;
+            padding: 18px 22px;
+            margin-bottom: 20px;
+        ">
+            <div style="font-size: 2.4rem; line-height: 1;">{persona['emoji']}</div>
+            <div style="font-size: 1.4rem; font-weight: 700; margin-top: 6px;">{persona['label']}</div>
+            <div style="font-size: 1rem; color: #555; margin-top: 4px;">{persona['tagline']}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Key insights (2 columns × 2 rows)
+    insights = _build_insights(f)
+    cols = st.columns(2)
+    for i, ins in enumerate(insights[:4]):
+        with cols[i % 2]:
+            _insight_card(ins)
+
+    # Collapsible detail
+    with st.expander("See all metrics in detail"):
+        _render_time_of_day(f)
+        st.divider()
+        _render_weekday_weekend(f)
+        st.divider()
+        _render_regularity(f)
+        st.divider()
+        _render_peak_behaviour(f)
+
+
+def _build_insights(f: pd.Series) -> list[dict]:
+    """
+    Derive 4-6 plain-English insight cards from the feature values.
+    Each dict: icon, title, value_label, description, status (good/warn/info).
+    """
+    insights = []
+
+    # --- Peak time ---
+    hop = f.get("hour_of_peak", None)
+    if hop is not None:
+        hour_label = f"{int(hop):02d}:00"
+        if hop < 10:
+            peak_desc = "You peak in the morning — early riser or morning appliances."
+        elif hop < 15:
+            peak_desc = "Midday is your busiest time — typical of home workers."
+        elif hop < 20:
+            peak_desc = "Your peak is in the late afternoon or evening — common after-work pattern."
+        else:
+            peak_desc = "You peak late at night — night-owl household."
+        insights.append(dict(icon="⏰", title="Peak hour", value=hour_label,
+                             desc=peak_desc, status="info"))
+
+    # --- Routine level ---
+    rs = f.get("routine_score", None)
+    if rs is not None:
+        if rs > 0.70:
+            r_label, r_desc, r_status = "Very routine", "Your schedule is highly predictable — same pattern day after day.", "good"
+        elif rs > 0.45:
+            r_label, r_desc, r_status = "Moderately routine", "Some variation in your daily pattern, but broadly consistent.", "info"
+        else:
+            r_label, r_desc, r_status = "Unpredictable", "Your usage varies a lot day-to-day — irregular schedule.", "warn"
+        insights.append(dict(icon="📅", title="Routine level", value=r_label,
+                             desc=r_desc, status=r_status))
+
+    # --- Weekday vs weekend ---
+    wr = f.get("weekend_ratio", None)
+    if wr is not None:
+        if wr > 1.2:
+            wr_label, wr_desc, wr_status = f"{wr:.1f}× more on weekends", "You use noticeably more electricity on weekends — you're home more then.", "info"
+        elif wr < 0.85:
+            wr_label, wr_desc, wr_status = f"{wr:.1f}× less on weekends", "Weekdays dominate your usage — could be home-office setup or weekday-heavy appliances.", "info"
+        else:
+            wr_label, wr_desc, wr_status = "Similar on both days", "Your weekday and weekend usage are about the same.", "good"
+        insights.append(dict(icon="📆", title="Weekday vs weekend", value=wr_label,
+                             desc=wr_desc, status=wr_status))
+
+    # --- Standby load ---
+    nb = f.get("night_baseline_kwh", None)
+    if nb is not None:
+        if nb > 0.20:
+            nb_label, nb_desc, nb_status = f"{nb:.2f} kWh/h standby", "Your standby load is high — always-on devices may be adding up.", "warn"
+        else:
+            nb_label, nb_desc, nb_status = f"{nb:.2f} kWh/h standby", "Low standby load — your appliances are not drawing much power overnight.", "good"
+        insights.append(dict(icon="🔌", title="Overnight standby", value=nb_label,
+                             desc=nb_desc, status=nb_status))
+
+    # --- Sleep-in score ---
+    ms = f.get("morning_shift_hours", None)
+    if ms is not None and not pd.isna(ms):
+        if ms > 1.5:
+            ms_label, ms_desc = f"+{ms:.1f} h later", "You start your day noticeably later on weekends — classic sleep-in."
+        elif ms < -0.5:
+            ms_label, ms_desc = f"{ms:.1f} h earlier", "You actually start earlier on weekends — early bird!"
+        else:
+            ms_label, ms_desc = "No shift", "Morning routine is similar on weekdays and weekends."
+        insights.append(dict(icon="😴", title="Weekend sleep-in", value=ms_label,
+                             desc=ms_desc, status="info"))
+
+    return insights
+
+
+def _insight_card(ins: dict):
+    status_colors = {"good": "#21c354", "warn": "#e6a817", "info": "#1c83e1"}
+    color = status_colors.get(ins["status"], "#888")
+    st.markdown(
+        f"""
+        <div style="
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.08);
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            border-left: 4px solid {color};
+        ">
+            <div style="font-size: 1.3rem;">{ins['icon']} <strong>{ins['title']}</strong></div>
+            <div style="font-size: 1.05rem; font-weight: 600; margin: 4px 0;">{ins['value']}</div>
+            <div style="font-size: 0.88rem; color: #666;">{ins['desc']}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Analyst-mode: persona banner at the top
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _render_persona_banner(f: pd.Series, persona: dict):
+    st.markdown(
+        f"""
+        <div style="
+            background: {persona['color']}22;
+            border-left: 5px solid {persona['color']};
+            border-radius: 10px;
+            padding: 16px 22px;
+            margin-bottom: 10px;
+        ">
+            <span style="font-size: 2rem;">{persona['emoji']}</span>
+            <span style="font-size: 1.3rem; font-weight: 700; margin-left: 10px;">{persona['label']}</span>
+            <div style="color: #555; margin-top: 6px;">{persona['tagline']}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "This tab distils your consumption history into interpretable numbers. "
+        "Together they form your **behavioural fingerprint** — a compact portrait of your household's habits."
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section renderers (Analyst mode detail)
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _render_time_of_day(f: pd.Series):
-    st.subheader("Time-of-day ratios")
+    st.subheader("🕐 When do you use electricity?")
     st.caption(
-        "What fraction of your total electricity falls in each part of the day? "
-        "These three windows sum to 1, so they are scale-invariant: a frugal household "
-        "and a heavy-use household with the same daily routine get the same ratios."
+        "Your daily electricity is split across three windows — day (07–16), "
+        "evening (17–22), and night (23–06). These fractions always add up to 100%, "
+        "so they reflect *when* you use power, not *how much*."
     )
 
     ratios = {
@@ -107,13 +311,14 @@ def _render_time_of_day(f: pd.Series):
             title="Share of daily consumption by time window",
         )
         fig.update_traces(textposition="outside")
-        fig.update_layout(showlegend=False, yaxis_tickformat=".0%", yaxis_title="Fraction of daily total")
+        fig.update_layout(showlegend=False, yaxis_tickformat=".0%",
+                          yaxis_title="Fraction of daily total")
         st.plotly_chart(fig, width="stretch")
 
     with col2:
         periods = ["Day", "Evening", "Night"]
         values  = [f.get("ratio_day", 0), f.get("ratio_evening", 0), f.get("ratio_night", 0)]
-        values_closed = values + [values[0]]
+        values_closed  = values + [values[0]]
         periods_closed = periods + [periods[0]]
 
         fig_r = go.Figure(go.Scatterpolar(
@@ -131,14 +336,29 @@ def _render_time_of_day(f: pd.Series):
 
     day     = f.get("ratio_day", 0)
     evening = f.get("ratio_evening", 0)
+    night   = f.get("ratio_night", 0)
+
     if day > 0.45:
-        st.info("**High daytime usage** — consistent with working from home or someone being home during the day.")
+        st.info("**Daytime-heavy** — most power is used during the day. Typical of households where someone is home all day.")
     elif evening > 0.40:
-        st.info("**Prominent evening peak** — classic after-work pattern: heavy usage in the evening hours.")
+        st.info("**Evening-heavy** — the after-work hours drive your consumption. Classic 9-to-5 worker pattern.")
+    elif night > 0.22:
+        st.info("**Night-heavy** — significant overnight usage. Check for always-on appliances or night-owl habits.")
+    else:
+        st.info("**Balanced** — usage is spread fairly evenly across the day.")
+
+    with st.expander("What do these numbers mean?"):
+        st.markdown(
+            "- **Day (07–16):** work hours — WFH, appliances running while people are awake\n"
+            "- **Evening (17–22):** after-work peak — cooking, TV, EV charging, laundry\n"
+            "- **Night (23–06):** baseline — standby devices, overnight appliances (dishwasher timer, etc.)\n\n"
+            "Because the three values always add to 100%, they capture *shape*, not scale. "
+            "A low-consumption household and a high-consumption one can have identical ratios."
+        )
 
 
 def _render_weekday_weekend(f: pd.Series):
-    st.subheader("Weekday vs. weekend")
+    st.subheader("📅 Weekdays vs. weekends")
 
     col1, col2 = st.columns(2)
 
@@ -147,43 +367,55 @@ def _render_weekday_weekend(f: pd.Series):
 
     with col1:
         if wr is not None:
+            # Plain-English label
+            if wr > 1.2:
+                label = f"🟡 {wr:.2f} — more on weekends"
+                caption = "You use more electricity on weekends, likely because you're home more."
+            elif wr < 0.85:
+                label = f"🔵 {wr:.2f} — more on weekdays"
+                caption = "Weekdays dominate — could be a home office or weekday-heavy appliances."
+            else:
+                label = f"🟢 {wr:.2f} — roughly equal"
+                caption = "Your electricity use is similar on weekdays and weekends."
+
+            st.metric(
+                "Weekend ratio",
+                label,
+                help="Mean weekend hourly usage ÷ mean weekday hourly usage. 1.0 = equal use on both.",
+            )
+            st.caption(caption)
             _metric_with_bar(
-                label="Weekend ratio",
-                value=wr,
-                fmt=".2f",
-                help_text=(
-                    "Mean weekend hourly usage ÷ mean weekday hourly usage. "
-                    "> 1 → more electricity on weekends (home on weekends). "
-                    "< 1 → heavier weekday use (WFH or weekday-heavy appliances)."
-                ),
-                reference=1.0,
-                lo=0.5, hi=1.8,
+                label="", value=wr, fmt=".2f",
+                help_text="",
+                reference=1.0, lo=0.5, hi=1.8,
+                show_metric=False,
             )
 
     with col2:
         if ms is not None and not pd.isna(ms):
+            if ms > 1.5:
+                ms_label = f"🛌 +{ms:.1f} h — sleeping in"
+                ms_caption = "You start your day noticeably later on weekends."
+            elif ms < -0.5:
+                ms_label = f"⏰ {ms:.1f} h — earlier start"
+                ms_caption = "Weekend mornings start earlier than weekday ones."
+            else:
+                ms_label = f"✅ {ms:+.1f} h — same schedule"
+                ms_caption = "Morning routine is similar on both weekdays and weekends."
+
             st.metric(
                 "Weekend morning shift",
-                f"{ms:+.1f} h",
-                help=(
-                    "How many hours later the morning electricity peak falls on weekends vs. weekdays. "
-                    "Positive = sleeping in on weekends."
-                ),
+                ms_label,
+                help="How many hours later the morning electricity peak falls on weekends vs weekdays.",
             )
-            if ms > 1.5:
-                st.caption("☕ Weekends start significantly later — classic 'sleeping in' pattern.")
-            elif ms < -0.5:
-                st.caption("⏰ Earlier starts on weekends (sport, market, religious observance?).")
-            else:
-                st.caption("Morning routine is similar on weekdays and weekends.")
+            st.caption(ms_caption)
 
 
 def _render_regularity(f: pd.Series):
-    st.subheader("Regularity & variability")
+    st.subheader("📊 How predictable is your household?")
     st.caption(
-        "Coefficient of Variation (CV) = std ÷ mean. Low CV means predictable, "
-        "clockwork usage. High CV means erratic — irregular schedule, guests, or "
-        "appliances that run only occasionally."
+        "Routine score (0–1): how consistent your hour-by-hour usage is across different days. "
+        "Close to 1 = clockwork schedule. Close to 0 = usage varies a lot."
     )
 
     col1, col2, col3 = st.columns(3)
@@ -191,31 +423,49 @@ def _render_regularity(f: pd.Series):
     with col1:
         cv_d = f.get("cv_daily", None)
         if cv_d is not None:
-            st.metric("CV (daily totals)", f"{cv_d:.2f}",
-                      help="Day-to-day variability of total kWh.")
-            st.caption("Low < 0.3 · Medium 0.3–0.6 · High > 0.6")
+            if cv_d < 0.3:
+                cv_label, cv_color = "🟢 Very consistent", "#21c354"
+            elif cv_d < 0.6:
+                cv_label, cv_color = "🟡 Moderately variable", "#e6a817"
+            else:
+                cv_label, cv_color = "🔴 Highly variable", "#e05252"
+            st.metric("Day-to-day consistency", cv_label,
+                      help=f"Coefficient of Variation of daily totals = {cv_d:.2f}. Lower = more consistent.")
+            st.caption(f"Technical value: CV = {cv_d:.2f}  (Low < 0.3 · Medium 0.3–0.6 · High > 0.6)")
 
     with col2:
         cv_h = f.get("cv_same_hour", None)
         if cv_h is not None:
-            st.metric("CV (same hour, cross-day)", f"{cv_h:.2f}",
-                      help="Average variability of each hour-slot across different days.")
+            if cv_h < 0.3:
+                cvh_label = "🟢 Very regular"
+            elif cv_h < 0.6:
+                cvh_label = "🟡 Moderately regular"
+            else:
+                cvh_label = "🔴 Irregular"
+            st.metric("Hour-by-hour regularity", cvh_label,
+                      help=f"Average CV across each hour of the day = {cv_h:.2f}. Are your mornings always similar?")
+            st.caption(f"Technical value: CV = {cv_h:.2f}")
 
     with col3:
         rs = f.get("routine_score", None)
         if rs is not None:
-            st.metric("Routine score", f"{rs:.2f}",
-                      help="1 − CV(same hour). Closer to 1 = very routine household.")
-            if rs > 0.7:
-                st.caption("🕐 Very routine — predictable schedule.")
-            elif rs > 0.4:
-                st.caption("〰️ Moderately routine.")
+            if rs > 0.70:
+                rs_label = "🕐 Very routine"
+                rs_caption = "Highly predictable — same schedule almost every day."
+            elif rs > 0.45:
+                rs_label = "〰️ Moderately routine"
+                rs_caption = "Generally consistent, with some day-to-day variation."
             else:
-                st.caption("🎲 Irregular — usage varies a lot from day to day.")
+                rs_label = "🎲 Unpredictable"
+                rs_caption = "Usage varies a lot from day to day."
+
+            st.metric("Routine score", f"{rs:.2f}  —  {rs_label}",
+                      help="1 − CV(same hour). Closer to 1 = very routine household.")
+            st.progress(float(rs), text=rs_caption)
 
 
 def _render_peak_behaviour(f: pd.Series):
-    st.subheader("Peak behaviour")
+    st.subheader("⚡ Peak usage behaviour")
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -223,57 +473,73 @@ def _render_peak_behaviour(f: pd.Series):
         hop = f.get("hour_of_peak", None)
         if hop is not None:
             hour_label = f"{int(hop):02d}:00"
-            st.metric("Hour of peak", hour_label,
-                      help="The hour (averaged across all days) with the highest electricity use.")
             if hop < 10:
-                st.caption("🌅 Morning peak")
+                peak_type = "🌅 Morning peak"
             elif hop < 15:
-                st.caption("☀️ Midday peak")
+                peak_type = "☀️ Midday peak"
             elif hop < 20:
-                st.caption("🌆 Afternoon/evening peak")
+                peak_type = "🌆 Evening peak"
             else:
-                st.caption("🌙 Night peak")
+                peak_type = "🌙 Night peak"
+            st.metric("Hour of peak", hour_label,
+                      help="The hour with the highest average electricity use.")
+            st.caption(peak_type)
 
     with col2:
         ptm = f.get("peak_to_mean", None)
         if ptm is not None:
-            st.metric("Peak-to-mean ratio", f"{ptm:.2f}",
-                      help="Peak hourly usage ÷ mean hourly usage. High → spiky; low → flat load.")
             if ptm > 3:
-                st.caption("⚡ Very spiky — concentrated usage burst.")
+                ptm_label = "⚡ Very spiky"
+                ptm_caption = "Usage is concentrated in short bursts."
             elif ptm > 2:
-                st.caption("📈 Moderate spike.")
+                ptm_label = "📈 Moderately spiky"
+                ptm_caption = "Clear peaks but not extreme."
             else:
-                st.caption("📉 Flat load — spread evenly through the day.")
+                ptm_label = "📉 Flat load"
+                ptm_caption = "Usage is spread evenly through the day."
+            st.metric("Peak intensity", f"{ptm:.1f}× average",
+                      help="Peak hourly usage ÷ mean hourly usage.")
+            st.caption(f"{ptm_label} — {ptm_caption}")
 
     with col3:
         ecs = f.get("evening_chores_score", None)
         if ecs is not None:
-            st.metric("Evening chores score", f"{ecs:.2f}",
-                      help="Fri/Sat evening usage ÷ weekday evening usage. High → weekend chores/cooking.")
             if ecs > 1.3:
-                st.caption("🧹 Weekend evenings are more active (cooking, cleaning).")
+                ecs_label = "🧹 Active weekends"
+                ecs_caption = "Fri/Sat evenings are busier — cooking, cleaning, entertaining."
             elif ecs < 0.8:
-                st.caption("📅 Weekday evenings dominate.")
+                ecs_label = "📅 Quieter weekends"
+                ecs_caption = "Weekday evenings are actually busier."
             else:
-                st.caption("Evenings are similar on weekdays and weekends.")
+                ecs_label = "⚖️ Similar both ways"
+                ecs_caption = "Evening activity is similar on weekdays and weekends."
+            st.metric("Weekend evenings", f"{ecs:.2f}",
+                      help="Fri/Sat evening usage ÷ weekday evening usage.")
+            st.caption(f"{ecs_label} — {ecs_caption}")
 
     with col4:
         nb = f.get("night_baseline_kwh", None)
         if nb is not None:
-            st.metric("Night baseline", f"{nb:.3f} kWh/h",
-                      help="Mean hourly consumption 00:00–05:00. Captures always-on devices.")
-            if nb > 0.2:
-                st.caption("🔌 High standby load — check always-on appliances.")
+            if nb > 0.20:
+                nb_label = "🔌 High standby"
+                nb_caption = "Check always-on appliances — they add up over time."
             else:
-                st.caption("✅ Low standby load.")
+                nb_label = "✅ Low standby"
+                nb_caption = "Your overnight draw is minimal."
+            st.metric("Overnight standby", f"{nb:.3f} kWh/h",
+                      help="Mean hourly consumption 00:00–05:00. Captures always-on devices.")
+            st.caption(f"{nb_label} — {nb_caption}")
 
 
-# ── small helper ──────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Small helpers
+# ─────────────────────────────────────────────────────────────────────────────
 
-def _metric_with_bar(label, value, fmt, help_text, reference, lo, hi):
-    """Show a metric plus a tiny progress bar positioned relative to a reference."""
-    st.metric(label, f"{value:{fmt}}", help=help_text)
-    pct = max(0.0, min(1.0, (value - lo) / (hi - lo)))
+def _metric_with_bar(label, value, fmt, help_text, reference, lo, hi,
+                     show_metric: bool = True):
+    """Show an optional metric label and a progress bar relative to a reference."""
+    if show_metric and label:
+        st.metric(label, f"{value:{fmt}}", help=help_text)
+    pct     = max(0.0, min(1.0, (value - lo) / (hi - lo)))
     ref_pct = max(0.0, min(1.0, (reference - lo) / (hi - lo)))
-    st.progress(pct, text=f"reference (1.0) at {ref_pct:.0%} of scale")
+    st.progress(pct, text=f"reference (1.0) is at {ref_pct:.0%} of the scale")

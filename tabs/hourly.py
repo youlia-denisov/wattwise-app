@@ -34,23 +34,48 @@ def render_hourly(df_clean, hourly, consumption_col, WEEKDAY_ORDER):
     ).reindex([d for d in WEEKDAY_ORDER if d in df_clean["weekday"].unique()])
 
     with col1:
-        st.plotly_chart(
-            px.imshow(pivot_mean, title="Mean Usage by Weekday & Hour",
-                      color_continuous_scale="RdYlGn_r", labels={"color": "Avg kWh"}),
-            width="stretch",
+        fig_mean = px.imshow(
+            pivot_mean, title="Mean Usage by Weekday & Hour",
+            color_continuous_scale="RdYlGn_r", labels={"color": "Avg kWh"},
         )
-    with col2:
-        st.plotly_chart(
-            px.imshow(pivot_std, title="Variability by Weekday & Hour",
-                      color_continuous_scale="Blues", labels={"color": "Std kWh"}),
-            width="stretch",
+        fig_mean.update_layout(
+            font=dict(size=14),
+            height=340,
+            margin=dict(t=40, b=30, l=10, r=10),
         )
+        st.plotly_chart(fig_mean, width="stretch")
 
-    st.caption(
-        "**Left chart — Average usage:** darker red = you typically use more electricity at that time. "
-        "**Right chart — Variability (standard deviation):** darker blue = your usage at that time varies a lot "
-        "from week to week. A pale cell means you're very consistent; a dark cell means some weeks are very "
-        "different from others."
+    with col2:
+        fig_std = px.imshow(
+            pivot_std, title="Variability by Weekday & Hour",
+            color_continuous_scale="Blues", labels={"color": "Std kWh"},
+        )
+        fig_std.update_layout(
+            font=dict(size=14),
+            height=340,
+            margin=dict(t=40, b=30, l=10, r=10),
+        )
+        st.plotly_chart(fig_std, width="stretch")
+
+    st.markdown(
+        """
+        <div style="
+            background: #EEF6FF;
+            border-left: 4px solid #1c83e1;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-top: 6px;
+        ">
+            <span style="font-weight: 700; color: #1c83e1;">📝 Note</span><br>
+            <span style="font-size: 0.95rem; color: #333;">
+                <b>Left chart — Average usage:</b> darker red = you typically use more electricity at that time.
+                &nbsp;<b>Right chart — Variability (standard deviation):</b> darker blue = your usage at that
+                time varies a lot from week to week. A pale cell means you're very consistent;
+                a dark cell means some weeks are very different from others.
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     st.divider()

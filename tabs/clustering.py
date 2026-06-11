@@ -269,7 +269,10 @@ def _render_cluster_heatmap(df_clustered, rank_col, WEEKDAY_ORDER, k, palette, l
     ))
     fig_heat.update_layout(
         title="Dominant Cluster — Weekday × Hour",
-        xaxis_title="Hour", yaxis_title="Weekday", height=380,
+        xaxis_title="Hour", yaxis_title="Weekday",
+        font=dict(size=14),
+        height=400,
+        margin=dict(t=50, b=40, l=10, r=10),
     )
     st.plotly_chart(fig_heat, width="stretch")
 
