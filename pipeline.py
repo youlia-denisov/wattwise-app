@@ -195,6 +195,7 @@ def run_pipeline(
             scenarios=scenarios,
             recommendation=recommendation,
             report_dir=report_dir,
+            df_clean=df,
             generated_plots=generated_plots,
         )
     except Exception:

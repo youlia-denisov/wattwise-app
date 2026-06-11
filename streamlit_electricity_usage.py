@@ -208,6 +208,10 @@ if df_clean is None:
     st.stop()
 
 # ── COLUMN DETECTION ─────────────────────────────────────────────────────────
+if daily_totals is None:
+    st.error("Daily totals could not be generated.")
+    st.stop()
+    
 consumption_col, date_col, daily_value_col = detect_columns(df_clean, daily_totals)
 
 # ── OFFERS ────────────────────────────────────────────────────────────────────

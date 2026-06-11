@@ -2,31 +2,37 @@ import re
 
 import streamlit as st
 
-# st.html() replaces the deprecated st.components.v1.html for rendering inline HTML.
-# st.components.v1.html will be removed after 2026-06-01.
-
 _REPORT_CSS = """
 <style>
-.report-box {
-    background: #f8f9fa; border-left: 4px solid #4a90d9; border-radius: 6px;
-    padding: 2rem 2.5rem; font-size: 0.97rem; line-height: 1.8; color: #1a1a2e;
+.report-section {
+    font-size: 0.97rem; line-height: 1.8; color: #1a1a2e;
 }
-.report-box h1 { color: #1a1a2e; font-size: 1.6rem; }
-.report-box h2 { color: #2c3e50; font-size: 1.15rem; margin-top: 1.5rem;
-    border-bottom: 1px solid #dee2e6; padding-bottom: 0.25rem; }
-.report-box h3 { color: #4a90d9; font-size: 1rem; }
-.report-box table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.87rem; }
-.report-box th { background: #e9ecef; padding: 0.45rem 0.75rem; text-align: left; }
-.report-box td { padding: 0.35rem 0.75rem; border-bottom: 1px solid #e9ecef; }
-.report-box tr:hover td { background: #f1f3f5; }
+.report-section h1 { color: #1a1a2e; font-size: 1.6rem; }
+.report-section h2 {
+    color: #2c3e50; font-size: 1.15rem; margin-top: 1.5rem;
+    border-bottom: 1px solid #dee2e6; padding-bottom: 0.25rem;
+}
+.report-section h3 { color: #4a90d9; font-size: 1rem; }
+.report-section table {
+    width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.87rem;
+}
+.report-section th { background: #e9ecef; padding: 0.45rem 0.75rem; text-align: left; }
+.report-section td { padding: 0.35rem 0.75rem; border-bottom: 1px solid #e9ecef; }
+.report-section tr:hover td { background: #f1f3f5; }
 </style>
 """
 
 
 def render_report(load_report, project_root, simple=False):
-    # project_root is ROOT from the main file — the repo folder.
-    # simple=True hides local file sections (HTML visuals, outlier tables)
-    # that only make sense when running locally.
+    """Render the report tab.
+
+    The report markdown may contain raw-HTML blocks (for the household profile
+    section) delimited by RAW_HTML_START / RAW_HTML_END comments.  We split on
+    those markers and render each segment correctly:
+      - Markdown segments -> st.markdown via md_lib (tables, bold, headings)
+      - HTML segments     -> st.markdown(unsafe_allow_html=True) directly,
+                             so <div> tags are never double-processed.
+    """
     st.header("Analysis Report")
     report_text = load_report()
 
@@ -34,18 +40,45 @@ def render_report(load_report, project_root, simple=False):
         st.warning("Report not found. Run the pipeline to generate it.")
         return
 
-    # Strip embedded image tags — figures aren't available as URLs in the app
-    clean_report = re.sub(r"^#{1,4} .+\n!\[.*?\]\(figures/.*?\)\n?", "", report_text, flags=re.MULTILINE)
-    clean_report = re.sub(r"^!\[.*?\]\(.*?\)\n?", "", clean_report, flags=re.MULTILINE)
+    # Strip embedded image references (figures not available in-app)
+    clean = re.sub(
+        r"^#{1,4} .+\n!\[.*?\]\(figures/.*?\)\n?",
+        "", report_text, flags=re.MULTILINE,
+    )
+    clean = re.sub(
+        r"^!\[.*?\]\(.*?\)\n?",
+        "", clean, flags=re.MULTILINE,
+    )
 
     st.markdown(_REPORT_CSS, unsafe_allow_html=True)
 
-    try:
-        import markdown as md_lib
-        html_content = md_lib.markdown(clean_report, extensions=["tables"])
-        st.markdown(f'<div class="report-box">{html_content}</div>', unsafe_allow_html=True)
-    except ImportError:
-        st.markdown(clean_report)
+    # Split on the HTML-block sentinels written by reporting.py
+    segments = re.split(
+        r"(<!-- RAW_HTML_START -->.*?<!-- RAW_HTML_END -->)",
+        clean,
+        flags=re.DOTALL,
+    )
+
+    for seg in segments:
+        seg = seg.strip()
+        if not seg:
+            continue
+
+        if seg.startswith("<!-- RAW_HTML_START -->"):
+            # Strip the comment markers, render the raw HTML directly
+            html = re.sub(r"<!--.*?-->", "", seg, flags=re.DOTALL).strip()
+            st.markdown(html, unsafe_allow_html=True)
+        else:
+            # Markdown segment
+            try:
+                import markdown as md_lib
+                html_md = md_lib.markdown(seg, extensions=["tables"])
+                st.markdown(
+                    f'<div class="report-section">{html_md}</div>',
+                    unsafe_allow_html=True,
+                )
+            except ImportError:
+                st.markdown(seg, unsafe_allow_html=True)
 
     if not simple:
         _render_html_visuals(project_root)
@@ -57,7 +90,6 @@ def render_report(load_report, project_root, simple=False):
 
 def _render_html_visuals(project_root):
     """Show any pre-generated Plotly HTML charts that exist on disk."""
-    # outputs/html/ is written by the pipeline into the project folder, not the user's temp dir.
     html_dir = project_root / "outputs" / "html"
     existing_htmls = sorted(html_dir.glob("*.html")) if html_dir.exists() else []
     if not existing_htmls:
@@ -67,7 +99,6 @@ def _render_html_visuals(project_root):
     st.caption("Only charts that exist on your machine are shown below.")
     for html_file in existing_htmls:
         with st.expander(html_file.stem.replace("_", " ").title()):
-            # st.html() replaces the deprecated st.components.v1.html
             st.html(html_file.read_text(encoding="utf-8"))
 
 
@@ -76,8 +107,6 @@ def _render_outlier_tables(project_root):
     st.divider()
     st.subheader("Outlier Data")
 
-    # These files are written by the pipeline into the project's data/processed/ folder.
-    # They are NOT in the user's temp dir — that's why we use project_root here.
     outlier_files = {
         "IQR method":     project_root / "data" / "processed" / "outliers_iqr.csv",
         "3-sigma method": project_root / "data" / "processed" / "outliers_3sigma.csv",
@@ -94,6 +123,6 @@ def _render_outlier_tables(project_root):
                      if c in df_out.columns]
         display_df = df_out.drop(columns=drop_cols).round(4)
 
-        with st.expander(f"{label} — {len(df_out)} flagged readings", expanded=True):
+        with st.expander(f"{label} -- {len(df_out)} flagged readings", expanded=True):
             st.dataframe(display_df, width="stretch",
                          height=min(400, 40 + len(display_df) * 35))
