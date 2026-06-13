@@ -2,16 +2,14 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-try:
-    from features import night_baseline
-except ImportError:
-    from src.features import night_baseline
-
+from src.loader import detect_kwh_col
+from app_loaders import safe_mean, safe_max
+from src.features import night_baseline, _hourly
 
 def render_overview(
     daily_totals, date_col, daily_value_col, df_clean,
-    consumption_col, safe_mean, safe_max,
-    WEEKDAY_ORDER=None, simple=False,
+    consumption_col,
+    weekday_order=None, simple=False,
 ):
     """
     Render the Overview tab.
@@ -21,7 +19,7 @@ def render_overview(
     simple : bool
         True  → friendly labels, explanatory text, and hourly heatmap (Simple mode).
         False → concise technical labels only (Analyst mode).
-    WEEKDAY_ORDER : list, optional
+    weekday_order : list, optional
         Required when simple=True for the heatmap row order.
     """
     if simple:
@@ -52,17 +50,16 @@ def render_overview(
             df_nb = df_clean.copy()
             df_nb["datetime"] = pd.to_datetime(df_nb["datetime"])
             if "kWh" not in df_nb.columns:
-                kwh_col = next(
-                    (c for c in df_nb.columns if any(w in c.lower() for w in ["kwh", "kwatt", "consumption"])),
-                    None,
-                )
+                kwh_col = detect_kwh_col(df_nb)
                 if kwh_col:
                     df_nb = df_nb.rename(columns={kwh_col: "kWh"})
-            nb_series = night_baseline(df_nb)
+            h_nb = _hourly(df_nb)
+            nb_series = night_baseline(h_nb)
             nb_val    = nb_series.get("min_consumption_baseline_kwh", float("nan"))
             nb_str    = f"{nb_val:.2f} kWh/h" if pd.notna(nb_val) else "N/A"
-        except Exception:
-            nb_str = "N/A"
+        except Exception as e:
+            st.error(f"Feature computation failed: {e}")
+            return None
         st.metric(
             baseline_label, nb_str,
             help=(
@@ -92,7 +89,7 @@ def render_overview(
         )
 
     # ── Heatmap (Simple mode only) ────────────────────────────────────────────
-    if simple and WEEKDAY_ORDER is not None:
+    if simple and weekday_order is not None:
         st.divider()
         st.subheader("When do you use the most electricity?")
         st.markdown(
@@ -101,7 +98,7 @@ def render_overview(
         )
 
         if {"hour", "weekday"}.issubset(df_clean.columns):
-            pivot_mean = _weekday_hour_pivot(df_clean, consumption_col, WEEKDAY_ORDER)
+            pivot_mean = _weekday_hour_pivot(df_clean, consumption_col, weekday_order)
             st.plotly_chart(
                 px.imshow(
                     pivot_mean,

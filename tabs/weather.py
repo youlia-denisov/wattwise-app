@@ -4,12 +4,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 try:
-    from israel_cities import CITIES, get_city_coords
+    from src.israel_cities import CITIES, get_city_coords
 except ImportError:
     from src.israel_cities import CITIES, get_city_coords
 
 try:
-    from weather_analysis import fetch_weather_open_meteo
+    from src.weather_analysis import fetch_weather_open_meteo
 except ImportError:
     from src.weather_analysis import fetch_weather_open_meteo
 
@@ -17,6 +17,7 @@ except ImportError:
 @st.cache_data(show_spinner="Fetching weather data…")
 def _fetch_weather(city: str, start_date: str, end_date: str) -> pd.DataFrame:
     """Fetch weather only — cached by city + date range."""
+    
     coords = get_city_coords(city)
     return fetch_weather_open_meteo(
         start_date,
@@ -26,6 +27,14 @@ def _fetch_weather(city: str, start_date: str, end_date: str) -> pd.DataFrame:
         timezone=coords["timezone"],
     )
 
+@st.cache_data(show_spinner=False)
+def _merge_weather_data(df_clean: pd.DataFrame, city: str,
+                        start_date: str, end_date: str) -> pd.DataFrame:
+    """Fetch weather and merge with consumption — cached by city + date range."""
+    weather = _fetch_weather(city, start_date, end_date)
+    df = df_clean.copy()
+    df["weather_hour"] = pd.to_datetime(df["datetime"]).dt.floor("h")
+    return df.merge(weather, on="weather_hour", how="left")
 
 def render_weather(df_clean: pd.DataFrame, simple: bool = False):
     if simple:
@@ -71,14 +80,10 @@ def render_weather(df_clean: pd.DataFrame, simple: bool = False):
     end_date   = datetimes.max().strftime("%Y-%m-%d")
 
     try:
-        weather = _fetch_weather(selected_city, start_date, end_date)
+        df_weather: pd.DataFrame = _merge_weather_data(df_clean, selected_city, start_date, end_date)
     except Exception as exc:
         st.error(f"Could not fetch weather data: {exc}")
         return
-
-    df = df_clean.copy()
-    df["weather_hour"] = pd.to_datetime(df["datetime"]).dt.floor("h")
-    df_weather = df.merge(weather, on="weather_hour", how="left")
 
     if df_weather["temperature_c"].isna().all():
         st.warning("Weather data was fetched but could not be merged with your consumption data.")

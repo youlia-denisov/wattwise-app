@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -20,14 +21,25 @@ WEEKDAY_ORDER = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday
 N_CLUSTERS = 4
 RANDOM_STATE = 42
 
+# Time-of-day windows (24-hour clock, inclusive boundaries)
+# Used in feature engineering, clustering, and discount calculations.
+# Change here and every module that imports these will update automatically.
+DAY_START_HOUR     = 7   # 07:00 — start of daytime window
+DAY_END_HOUR       = 16  # 16:00 — end of daytime window
+EVENING_START_HOUR = 17  # 17:00 — start of evening / after-work peak
+EVENING_END_HOUR   = 22  # 22:00 — end of evening window
+NIGHT_START_HOUR   = 23  # 23:00 — start of overnight baseline (wraps to 06:00)
+
 # Location and API for weather data (if used)
 # Set to your location's latitude and longitude for accurate weather data retrieval, which can be used in the API cross-analysis step.
 
 OPEN_METEO_URL = "https://archive-api.open-meteo.com/v1/archive"
 
-HOST_LATITUDE = 31.5                # Replace with your latitude
-HOST_LONGITUDE = 34.8               # Replace with your longitude
-LOCAL_TIMEZONE = "Asia/Jerusalem"   # Replace with your timezone
+# Location for weather data. Override via environment variables for deployment;
+# defaults are set to Israel (original author's location) as a fallback.
+HOST_LATITUDE  = float(os.environ.get("HOST_LATITUDE",  31.5))
+HOST_LONGITUDE = float(os.environ.get("HOST_LONGITUDE", 34.8))
+LOCAL_TIMEZONE = os.environ.get("LOCAL_TIMEZONE", "Asia/Jerusalem")
 
 # Set to True/False if you know. Leave None to keep all offers and mark eligibility as unknown.
 HAS_SMART_METER = None

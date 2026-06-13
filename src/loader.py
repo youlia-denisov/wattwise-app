@@ -1,20 +1,31 @@
 """Loader functions for electricity consumption data and discount offers."""
 
+import logging
 from pathlib import Path
 import pandas as pd
 from config import RAW_DIR, EXTERNAL_DIR
+from src.text_parsers import fill_time_restriction_from_context
 
+log = logging.getLogger(__name__)
 
 def find_header_row(csv_path: Path) -> int:
     """Find the real IEC table header row in a CSV export."""
-
-    with open(csv_path, encoding="utf-8-sig", errors="ignore") as f: 
+    with open(csv_path, encoding="utf-8-sig", errors="ignore") as f:
         for i, line in enumerate(f):
             if "תאריך" in line and "מועד תחילת הפעימה" in line:
                 return i
+    raise ValueError(
+        f"Could not find IEC header row in {csv_path.name}. "
+        "Is this an IEC consumption CSV?"
+    )
 
-    return 0
-
+def detect_kwh_col(df: pd.DataFrame) -> str | None:
+    """Return the name of the kWh/consumption column, or None if not found."""
+    return next(
+        (c for c in df.columns
+         if any(w in c.lower() for w in ["kwh", "kwatt", "consumption"])),
+        None,
+    )
 
 def find_consumption_file() -> Path:
     """Find the newest IEC consumption CSV in data/raw/."""
@@ -95,7 +106,7 @@ def load_discount_offers(
     offers.columns = offers.columns.str.strip()
 
     # Fill missing time_restriction values by parsing the Hebrew context column.
-    from src.discount_analysis import fill_time_restriction_from_context
+    
     offers = fill_time_restriction_from_context(offers)
 
     return offers

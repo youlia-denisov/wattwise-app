@@ -14,6 +14,32 @@ from config import TARIFF
 from src.loader import load_raw_csv
 from src.preprocessing import clean_consumption_data
 from app_offers import get_offers_df, DISCOUNT_OFFERS_FILE
+from app_loaders import load_data, load_clustering_data, load_weather_data
+
+
+def _handle_file_upload(uploaded_file, user_dir: Path) -> None:
+    """
+    Save the uploaded CSV to disk, clean it, and store the result in session_state.
+
+    Separated from render_sidebar so that file-processing logic is testable
+    independently of the Streamlit UI layout.
+
+    Parameters
+    ----------
+    uploaded_file : streamlit.runtime.uploaded_file_manager.UploadedFile
+        The file object returned by st.file_uploader (guaranteed non-None).
+    user_dir : Path
+        This user's temp folder where raw_input.csv will be written.
+    """
+    raw_path = user_dir / "raw_input.csv"
+    raw_path.write_bytes(uploaded_file.read())
+    try:
+        raw_df   = load_raw_csv(raw_path)
+        clean_df = clean_consumption_data(raw_df)
+        st.session_state["uploaded_df"] = clean_df
+        st.success(f"✅ Loaded {len(clean_df):,} readings.")
+    except Exception as e:
+        st.error(f"Could not parse the file: {e}")
 
 
 def render_sidebar(user_dir: Path, pipeline_available: bool, run_pipeline_fn) -> dict:
@@ -35,7 +61,6 @@ def render_sidebar(user_dir: Path, pipeline_available: bool, run_pipeline_fn) ->
         tariff          – float, electricity rate in ₪/kWh
         has_smart_meter – True / False / None
         customer_types  – list of strings
-        view_mode       – "Simple" or "Analyst"
     """
     with st.sidebar:
         st.header("⚡ Dashboard Setup")
@@ -44,15 +69,7 @@ def render_sidebar(user_dir: Path, pipeline_available: bool, run_pipeline_fn) ->
         st.markdown("**Step 1 — Upload your file**")
         uploaded_file = st.file_uploader("Electricity CSV", type="csv", label_visibility="collapsed")
         if uploaded_file is not None:
-            raw_path = user_dir / "raw_input.csv"
-            raw_path.write_bytes(uploaded_file.read())
-            try:
-                raw_df = load_raw_csv(raw_path)
-                clean_df = clean_consumption_data(raw_df)
-                st.session_state["uploaded_df"] = clean_df
-                st.success(f"✅ Loaded {len(clean_df):,} readings.")
-            except Exception as e:
-                st.error(f"Could not parse the file: {e}")
+            _handle_file_upload(uploaded_file, user_dir)
 
         st.divider()
 
@@ -109,7 +126,9 @@ def render_sidebar(user_dir: Path, pipeline_available: bool, run_pipeline_fn) ->
                     progress_bar.progress(100, text="✅ Done!")
                     status_text.empty()
                     st.success("Pipeline completed!")
-                    st.cache_data.clear()
+                    load_data.clear()
+                    load_clustering_data.clear()
+                    load_weather_data.clear()
                     st.rerun()
                 except Exception as e:
                     progress_bar.empty()

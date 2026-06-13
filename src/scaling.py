@@ -46,7 +46,6 @@ def save_heatmap(df, value_col, title, output_file):
 
     fig.update_layout(width=1100, height=600)
     fig.write_html(output_file)
-    fig.show()
 
 
 def main() -> None:

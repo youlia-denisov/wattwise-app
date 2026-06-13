@@ -14,6 +14,7 @@ Visualizations are handled separately in visualization.py.
 Reporting is handled separately in reporting.py.
 """
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -21,15 +22,24 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import RobustScaler
 
-from config import PROCESSED_DIR, N_CLUSTERS, RANDOM_STATE, FIGURE_DIR
+from config import (
+    N_CLUSTERS, RANDOM_STATE,
+    DAY_START_HOUR, DAY_END_HOUR,
+    EVENING_START_HOUR, EVENING_END_HOUR,
+    NIGHT_START_HOUR,
+)
+
+log = logging.getLogger(__name__)
 
 __all__ = ["run_clustering"]
 
 # CONFIGURATION
 
-CLEANED_FILE = PROCESSED_DIR / "cleaned_consumption.csv"
-CLUSTERED_FILE = PROCESSED_DIR / "cleaned_consumption_clustered.csv"
-CLUSTER_SUMMARY_FILE = PROCESSED_DIR / "cluster_rank_summary.csv"
+# Paths are None by default — callers must pass explicit per-user paths.
+CLEANED_FILE = None
+CLUSTERED_FILE = None
+CLUSTER_SUMMARY_FILE = None
+FIGURE_DIR = None
 
 # Range of k values tested by the elbow method.
 # k=1 is excluded — one cluster means "no clustering".
@@ -128,7 +138,8 @@ def apply_cyclical_encoding(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df["month"] = pd.to_numeric(df["month"])
 
-    assert df["hour"].dtype in [np.int64, np.float64], f"Expected numeric hour, got {df['hour'].dtype}"
+    if not pd.api.types.is_numeric_dtype(df["hour"]):
+        raise ValueError(f"Expected numeric hour column, got {df['hour'].dtype}")
 
     df["hour_sin"] = np.sin(2 * np.pi * df["hour"] / 24)
     df["hour_cos"] = np.cos(2 * np.pi * df["hour"] / 24)
@@ -183,7 +194,7 @@ def add_daily_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── evening peak (17:00–22:00) ─────────────────────────────────────────
     evening_peak = (
-        df[df["hour"].between(17, 22)]
+        df[df["hour"].between(EVENING_START_HOUR, EVENING_END_HOUR)]
         .groupby("date")["kWh"]
         .mean()
         .rename("evening_peak")
@@ -191,7 +202,7 @@ def add_daily_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── night baseline (23:00–06:00) ───────────────────────────────────────
     night_baseline = (
-        df[df["hour"].isin(list(range(23, 24)) + list(range(0, 7)))]
+        df[df["hour"].isin(list(range(NIGHT_START_HOUR, 24)) + list(range(0, DAY_START_HOUR)))]
         .groupby("date")["kWh"]
         .mean()
         .rename("night_baseline")
@@ -411,7 +422,7 @@ def run_clustering(
         inertias = compute_elbow_inertias(X_scaled, random_state=random_state)
         elbow_df = pd.DataFrame(list(inertias.items()), columns=["k", "inertia"])
         elbow_df.to_csv(figure_dir / "elbow_inertias.csv", index=False)
-        print(f"  Elbow inertia data saved to {figure_dir / 'elbow_inertias.csv'}")
+        log.info("  Elbow inertia data saved to %s", figure_dir / "elbow_inertias.csv")
 
     # 7. Fit KMeans
     km = fit_kmeans(X_scaled, n_clusters=n_clusters, random_state=random_state)
@@ -427,7 +438,7 @@ def run_clustering(
     summary = build_cluster_summary(df)
     summary.to_csv(summary_path, index=False)
 
-    print(f"  Clustered data saved to {output_path}")
-    print(f"  Cluster summary saved to {summary_path}")
+    log.info("Clustered data saved to %s", output_path)
+    log.info("Cluster summary saved to %s", summary_path)
 
     return df

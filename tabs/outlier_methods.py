@@ -63,6 +63,13 @@ def _timeline_fig(df: pd.DataFrame, flagged_idx, color: str, method_name: str):
     fig.update_layout(margin=dict(t=10, b=30), showlegend=True)
     return fig
 
+# The main pipeline functions are cached, but if loading fails we return None for all outputs.
+# This way the app can still render and show an error message, instead of crashing with a FileNotFoundError.
+
+@st.cache_data(show_spinner=False)
+def _cached_outlier_pipeline(df_clean: pd.DataFrame):
+    return run_outlier_pipeline(df_clean)
+
 
 # ── main render function ───────────────────────────────────────────────────────
 
@@ -79,7 +86,7 @@ def render_outlier_methods(df_clean: pd.DataFrame, consumption_col: str,
     # ── run pipeline ──────────────────────────────────────────────────────────
     with st.spinner("Analysing your data…"):
         try:
-            res = run_outlier_pipeline(df_clean)
+            res = _cached_outlier_pipeline(df_clean)
         except Exception as e:
             st.error(f"Could not run outlier detection: {e}")
             return

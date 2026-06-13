@@ -12,12 +12,7 @@ import pandas as pd
 import streamlit as st
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-# Import the shared offers-file path from config.py.
-# If config.py is missing (e.g. on a fresh machine), fall back to a sensible default.
-try:
-    from config import DISCOUNT_OFFERS_FILE
-except ImportError:
-    DISCOUNT_OFFERS_FILE = Path(__file__).resolve().parent / "data" / "external" / "electricity_discount_offers.csv"
+from config import DISCOUNT_OFFERS_FILE
 
 ONE_WEEK_SECONDS = 7 * 24 * 3600
 

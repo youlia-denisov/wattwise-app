@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
+from src.outliers import detect_outliers_iqr
+
 
 def render_trends(df_clean, consumption_col):
     st.header("Trends & Outliers")
@@ -44,14 +46,35 @@ def _render_outliers(df_clean, consumption_col):
     """IQR-based outlier detection and visualisation."""
     st.subheader("Unusual Readings — IQR Method")
 
-    kwh = pd.to_numeric(df_clean[consumption_col], errors="coerce").dropna()
+    # Rename to "kWh" so detect_outliers_iqr (which expects that column name) can work.
+    # We rename back afterwards so the rest of the tab sees the original column name.
+    df_norm = df_clean.copy()
+    if consumption_col != "kWh":
+        df_norm = df_norm.rename(columns={consumption_col: "kWh"})
+    df_norm["kWh"] = pd.to_numeric(df_norm["kWh"], errors="coerce")
+    df_norm = df_norm.dropna(subset=["kWh"])
+
+    # Compute display stats (q1/q3/iqr are needed for the metrics cards below)
+    kwh = df_norm["kWh"]
     q1, q3 = kwh.quantile(0.25), kwh.quantile(0.75)
     iqr = q3 - q1
-    upper_fence = q3 + 1.5 * iqr
-    lower_fence = q1 - 1.5 * iqr
+    total_readings = len(kwh)
 
-    outlier_mask = (kwh < lower_fence) | (kwh > upper_fence)
-    df_out = df_clean.loc[outlier_mask.index[outlier_mask]].copy()
+    # Outlier detection — no reimplementation; use the shared function
+    df_out_raw = detect_outliers_iqr(df_norm)
+
+    # Pull fences from the returned metadata columns (same values on every row)
+    if not df_out_raw.empty:
+        upper_fence = df_out_raw["upper_limit"].iloc[0]
+        lower_fence = df_out_raw["lower_limit"].iloc[0]
+    else:
+        upper_fence = q3 + 1.5 * iqr
+        lower_fence = q1 - 1.5 * iqr
+
+    # Restore original column name and drop pipeline metadata columns before display
+    df_out = (df_out_raw
+              .drop(columns=["method", "lower_limit", "upper_limit"], errors="ignore")
+              .rename(columns={"kWh": consumption_col}))
     total_readings = len(kwh)
 
     m1, m2, m3, m4, m5 = st.columns(5)

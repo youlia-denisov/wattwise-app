@@ -15,12 +15,18 @@ The clustering visualizations are saved as PNG files for easy sharing and report
 """
 
 from pathlib import Path
+import logging
+import re
+import traceback
 import pandas as pd
 import plotly.express as px
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 from config import WEEKDAY_ORDER
+from src.discount_analysis import _load_plot_inputs, build_price_matrix, BASE_RATE
+
+log = logging.getLogger(__name__)
 
 def save_all_visuals(df: pd.DataFrame, hourly: pd.DataFrame, daily: pd.DataFrame, outliers: pd.DataFrame, html_dir: Path) -> None:
     """Original Plotly visualizations - saved as interactive HTML."""
@@ -196,7 +202,7 @@ def plot_elbow_curve(
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close()
 
-    print(f"Saved elbow curve to: {output_path}")
+    log.info("Saved elbow curve to %s", output_path)
 
 
 def save_clustering_visuals(
@@ -224,14 +230,14 @@ def save_clustering_visuals(
     """
 
     if df_clustered is None or df_clustered.empty:
-        print("No clustered data received. Skipping clustering visuals.")
+        log.warning("No clustered data received. Skipping clustering visuals.")
         return []
 
     required_cols = ["kWh", "hour", "weekday", "cluster"]
     missing = [col for col in required_cols if col not in df_clustered.columns]
 
     if missing:
-        print(f"Missing clustering visualization columns: {missing}")
+        log.warning("Missing clustering visualization columns: %s", missing)
         return []
 
     figure_dir.mkdir(parents=True, exist_ok=True)
@@ -307,4 +313,123 @@ def save_clustering_visuals(
 
     cluster_sizes = (
         df["cluster_rank"]
-        .value_counts())
+        .value_counts()
+        .sort_index()
+    )
+
+    axes[1, 1].bar(
+        cluster_sizes.index.astype(str),
+        cluster_sizes.values,
+        color=[CLUSTER_PALETTE.get(i, "#aaa") for i in cluster_sizes.index],
+    )
+    axes[1, 1].set_title("Readings per Cluster Rank")
+    axes[1, 1].set_xlabel("Cluster rank")
+    axes[1, 1].set_ylabel("Number of readings")
+
+    plt.suptitle("Clustering Summary Dashboard", fontsize=14, fontweight="bold")
+    plt.tight_layout()
+
+    dashboard_path = figure_dir / "clustering_dashboard.png"
+    plt.savefig(dashboard_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    generated.append(dashboard_path)
+    log.info("Saved clustering dashboard to %s", dashboard_path)
+
+    return generated
+
+
+# ── DISCOUNT PLAN COMPARISON HEATMAPS ────────────────────────────────────────
+# These were previously in src/discount_analysis.py. They live here because
+# they produce image output — the same job as every other function in this file.
+
+def _save_one_plot(
+    consumption_matrix: pd.DataFrame,
+    plan_matrix_df: pd.DataFrame,
+    supplier: str,
+    plan: str,
+    discount: float,
+    figure_dir: Path,
+) -> str:
+    """
+    Render and save a side-by-side heatmap PNG for one discount plan.
+    Returns the filename of the saved PNG (not the full path).
+    """
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 5.5))
+
+    sns.heatmap(
+        consumption_matrix, annot=False, fmt=".2f", cmap="Oranges", ax=ax1,
+        cbar_kws={"label": "Usage (kWh)"},
+    )
+    ax1.set_title("Your Family's Real Consumption Profile", fontsize=11, fontweight="bold")
+    ax1.tick_params(axis="x", rotation=45)
+
+    sns.heatmap(
+        plan_matrix_df, annot=False, fmt=".3f", cmap="RdYlGn_r",
+        vmin=BASE_RATE * 0.65, vmax=BASE_RATE, ax=ax2,
+        cbar_kws={"label": "Tariff Rate (NIS)"},
+    )
+    ax2.set_title(f"{supplier} — {plan} ({discount}% Min Discount)", fontsize=11, fontweight="bold")
+    ax2.tick_params(axis="x", rotation=45)
+
+    plt.tight_layout()
+
+    safe_name = re.sub(r"[^a-zA-Z0-9]", "_", f"{supplier}_{plan}").lower()
+    filename   = f"comparison_{safe_name}.png"
+    plt.savefig(figure_dir / filename, dpi=150)
+    plt.close()
+
+    return filename
+
+
+def generate_side_by_side_plots(
+    has_smart_meter=None,
+    processed_dir: Path | None = None,
+    table_dir: Path | None = None,
+    figure_dir: Path | None = None,
+) -> list:
+    """
+    Save a side-by-side heatmap for each eligible plan.
+
+    Parameters
+    ----------
+    has_smart_meter : bool or None
+    processed_dir : Path  — per-user temp path (required)
+    table_dir : Path      — per-user temp path (required)
+    figure_dir : Path     — per-user temp path (required)
+    """
+    if processed_dir is None or table_dir is None or figure_dir is None:
+        raise ValueError(
+            "processed_dir, table_dir, and figure_dir must all be provided explicitly. "
+            "Pass the per-user temp directory paths from the pipeline."
+        )
+    _processed_dir = Path(processed_dir)
+    _table_dir     = Path(table_dir)
+    _figure_dir    = Path(figure_dir)
+    _figure_dir.mkdir(parents=True, exist_ok=True)
+
+    consumption_matrix, unique_plans = _load_plot_inputs(_processed_dir, _table_dir, has_smart_meter)
+
+    output_images = []
+    for idx, row in unique_plans.iterrows():
+        supplier    = row["supplier_name"]
+        plan        = row["plan_name"]
+        discount    = float(row["discount_pct"])
+        restriction = row["time_restriction"]
+
+        log.info("  [plot %d] %s — %s | discount=%.1f%% | restriction=%r",
+                 idx, supplier, plan, discount, restriction)
+        try:
+            plan_matrix_df = build_price_matrix(restriction, discount)
+            filename = _save_one_plot(
+                consumption_matrix, plan_matrix_df,
+                supplier, plan, discount, _figure_dir,
+            )
+            log.info("    saved %s", filename)
+            output_images.append({"supplier": supplier, "plan": plan, "filename": filename})
+        except Exception:
+            log.error("    FAILED on plan '%s — %s':\n%s", supplier, plan, traceback.format_exc())
+            plt.close()
+            continue
+
+    log.info("Saved %d comparison plots to %s", len(output_images), _figure_dir)
+    return output_images

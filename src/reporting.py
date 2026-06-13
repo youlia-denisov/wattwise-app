@@ -20,6 +20,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from src.features import derive_persona, build_insights
+from src.loader import detect_kwh_col
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -63,119 +65,6 @@ def _gfm_table(df, columns, n=10):
 
 # ── User Habits section ───────────────────────────────────────────────────────
 
-def _derive_persona(f):
-    """Map feature values to a household persona dict (emoji, label, tagline, color)."""
-    ratio_day     = f.get("daytime_activity_share", 0)
-    ratio_night   = f.get("ratio_night",            0)
-    ratio_evening = f.get("ratio_evening",          0)
-    weekend_ratio = f.get("weekend_ratio", 1)
-    routine_score = f.get("routine_score", 0.5)
-
-    if ratio_day > 0.45:
-        return dict(emoji="🏠", label="Home Dweller",
-                    tagline="Most of your electricity is used during the day — you're home a lot!",
-                    color="#FFB74D")
-    if ratio_night > 0.25:
-        return dict(emoji="🌙", label="Night Owl",
-                    tagline="Your household comes alive at night — late evenings are your peak time.",
-                    color="#9575CD")
-    if weekend_ratio > 1.35:
-        return dict(emoji="🎉", label="Weekend Warrior",
-                    tagline="You use noticeably more electricity on weekends.",
-                    color="#4DB6AC")
-    if routine_score > 0.70:
-        return dict(emoji="🕐", label="Clockwork Household",
-                    tagline="Your daily routine is very consistent — predictable and efficient.",
-                    color="#64B5F6")
-    if ratio_evening > 0.40:
-        return dict(emoji="🌆", label="After-Work Household",
-                    tagline="Evenings are your busiest time — classic after-work energy spike.",
-                    color="#F06292")
-    return dict(emoji="⚖️", label="Balanced Household",
-                tagline="Your usage is spread fairly evenly — no single pattern dominates.",
-                color="#81C784")
-
-
-def _build_insights(f):
-    """Return a list of insight dicts from feature values (up to 5 cards)."""
-    import math
-    insights = []
-
-    hop = f.get("hour_of_peak", None)
-    if hop is not None:
-        hour_label = "{:02d}:00".format(int(hop))
-        if hop < 10:
-            desc = "You peak in the morning — early riser or morning appliances."
-        elif hop < 15:
-            desc = "Midday is your busiest time — typical of home workers."
-        elif hop < 20:
-            desc = "Your peak is in the late afternoon or evening — common after-work pattern."
-        else:
-            desc = "You peak late at night — night-owl household."
-        insights.append(dict(icon="⏰", title="Peak hour", value=hour_label, desc=desc, status="info"))
-
-    rs = f.get("routine_score", None)
-    if rs is not None:
-        if rs > 0.70:
-            r_val, r_desc, r_st = "Very routine", "Your schedule is highly predictable — same pattern day after day.", "good"
-        elif rs > 0.45:
-            r_val, r_desc, r_st = "Moderately routine", "Some variation in your daily pattern, but broadly consistent.", "info"
-        else:
-            r_val, r_desc, r_st = "Unpredictable", "Your usage varies a lot day-to-day — irregular schedule.", "warn"
-        insights.append(dict(icon="📅", title="Routine level", value=r_val, desc=r_desc, status=r_st))
-
-    wr = f.get("weekend_ratio", None)
-    if wr is not None:
-        if wr > 1.2:
-            wr_val, wr_desc = "{:.1f}x more on weekends".format(wr), "You use more electricity on weekends — you're probably home more then."
-        elif wr < 0.85:
-            wr_val, wr_desc = "{:.1f}x less on weekends".format(wr), "Weekdays dominate — could be a home-office setup."
-        else:
-            wr_val, wr_desc = "Similar on both days", "Your weekday and weekend usage are about the same."
-        insights.append(dict(icon="📆", title="Weekday vs weekend", value=wr_val, desc=wr_desc, status="info"))
-
-    nb = f.get("min_consumption_baseline_kwh", None)
-    if nb is not None and not math.isnan(float(nb)):
-        if nb > 0.20:
-            nb_val  = "{:.2f} kWh/h".format(nb)
-            nb_desc = (
-                "This is your Minimal Consumption Baseline — electricity your home "
-                "uses even when everyone is asleep (fridges, routers, standby devices). "
-                "Your level is above average: worth checking for always-on appliances "
-                "that could be switched off or replaced."
-            )
-            nb_st = "warn"
-        elif nb > 0.10:
-            nb_val  = "{:.2f} kWh/h".format(nb)
-            nb_desc = (
-                "This is your Minimal Consumption Baseline — the unavoidable overnight "
-                "draw from fridges, routers, and standby electronics. "
-                "Your level is typical for a modern home."
-            )
-            nb_st = "info"
-        else:
-            nb_val  = "{:.2f} kWh/h".format(nb)
-            nb_desc = (
-                "This is your Minimal Consumption Baseline — electricity consumed "
-                "while the household sleeps. Your standby load is very low, "
-                "suggesting well-managed or energy-efficient appliances."
-            )
-            nb_st = "good"
-        insights.append(dict(icon="🔌", title="Minimal Consumption Baseline", value=nb_val, desc=nb_desc, status=nb_st))
-
-    ms = f.get("morning_shift_hours", None)
-    if ms is not None and not math.isnan(float(ms)):
-        if ms > 1.5:
-            ms_val, ms_desc = "+{:.1f} h later on weekends".format(ms), "You start your day noticeably later on weekends — classic sleep-in."
-        elif ms < -0.5:
-            ms_val, ms_desc = "{:.1f} h earlier on weekends".format(ms), "Weekend mornings start earlier — early bird!"
-        else:
-            ms_val, ms_desc = "No shift", "Morning routine is similar on weekdays and weekends."
-        insights.append(dict(icon="😴", title="Weekend sleep-in", value=ms_val, desc=ms_desc, status="info"))
-
-    return insights
-
-
 _STATUS_COLORS = {"good": "#21c354", "warn": "#e6a817", "info": "#1c83e1"}
 
 
@@ -200,10 +89,7 @@ def _habits_html(df_clean):
         df = df_clean.copy()
         df["datetime"] = pd.to_datetime(df["datetime"])
         if "kWh" not in df.columns:
-            kwh_col = next(
-                (c for c in df.columns if any(w in c.lower() for w in ["kwh", "kwatt", "consumption"])),
-                None,
-            )
+            kwh_col = detect_kwh_col(df)
             if kwh_col is None:
                 return ""
             df = df.rename(columns={kwh_col: "kWh"})
@@ -211,8 +97,8 @@ def _habits_html(df_clean):
     except Exception:
         return ""
 
-    persona  = _derive_persona(f)
-    insights = _build_insights(f)
+    persona  = derive_persona(f)
+    insights = build_insights(f)
     color    = persona["color"]
 
     banner = (

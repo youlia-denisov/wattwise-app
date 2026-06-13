@@ -14,9 +14,12 @@ Typical call chain:
 """
 
 import pandas as pd
-from config import TARIFF, WEEKDAY_ORDER
+from config import (
+    TARIFF, WEEKDAY_ORDER,
+    DAY_START_HOUR, DAY_END_HOUR, EVENING_START_HOUR, EVENING_END_HOUR, NIGHT_START_HOUR,
+)
 
-from discount_analysis import (
+from src.discount_analysis import (
     _hours_from_restriction,
     extract_weekdays,
     extract_hour_range,
@@ -174,9 +177,9 @@ def build_custom_pattern_df(
     weekdays   = WEEKDAY_ORDER[:5]   # Sun-Thu
     weekend    = WEEKDAY_ORDER[5:]   # Fri-Sat
 
-    day_hours     = list(range(7, 17))   # 07-16
-    evening_hours = list(range(17, 23))  # 17-22
-    night_hours   = list(range(23, 24)) + list(range(0, 7))  # 23, 00-06
+    day_hours     = list(range(DAY_START_HOUR, DAY_END_HOUR + 1))              # 07-16
+    evening_hours = list(range(EVENING_START_HOUR, EVENING_END_HOUR + 1))    # 17-22
+    night_hours   = list(range(NIGHT_START_HOUR, 24)) + list(range(0, DAY_START_HOUR))  # 23, 00-06
 
     rows = []
 

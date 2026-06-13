@@ -12,16 +12,13 @@ Discount table should help identify which plans are most relevant to the user.
 
 from pathlib import Path
 import logging
-import traceback
+import re
 import numpy as np
 import pandas as pd
-import seaborn as sns
-import re
-import matplotlib.pyplot as plt
+from src.text_parsers import fill_time_restriction_from_context
+from config import TARIFF, WEEKDAY_ORDER
 
 log = logging.getLogger(__name__)
-
-from config import TARIFF, WEEKDAY_ORDER, PROCESSED_DIR, TABLE_DIR, FIGURE_DIR
 
 # Approximate 2026 IEC standard rate per kWh (in NIS)
 BASE_RATE = TARIFF
@@ -49,83 +46,15 @@ WEEKDAY_MAP = {
     "שישי": ["Friday"],
     "שבת": ["Saturday"],
 }
-
-
-def fill_time_restriction_from_context(offers: pd.DataFrame) -> pd.DataFrame:
-    """
-    Where `time_restriction` is missing, parse it from the Hebrew `context` column.
-
-    Extracts:
-      - time range  e.g. "7:00 ועד 17:00"  →  "07:00-17:00"
-      - weekday range from Hebrew day letters or keyword phrases
-
-    Returns the DataFrame with `time_restriction` filled in-place for NaN rows.
-    """
-    offers = offers.copy()
-    if "context" not in offers.columns:
-        return offers
-
-    time_re = re.compile(r"(\d{1,2}:\d{2})\s*(?:ועד|עד|-|–)\s*(\d{1,2}:\d{2})")
-
-    def _parse_one(row):
-        ctx = row.get("context", "")
-        if not isinstance(ctx, str) or not ctx.strip():
-            return row["time_restriction"]
-        if pd.notna(row["time_restriction"]) and str(row["time_restriction"]).strip() not in {"", "nan"}:
-            return row["time_restriction"]  # already filled
-
-        parts = []
-
-        # ── weekday ────────────────────────────────────────────────────────────
-        weekday_tag = None
-        for key in WEEKDAY_MAP:
-            if key in ctx:
-                days = WEEKDAY_MAP[key]
-                if days == WEEKDAY_ORDER:
-                    weekday_tag = "all week"
-                elif days == ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday"]:
-                    weekday_tag = "sun-thu"
-                elif days == ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]:
-                    weekday_tag = "sun-fri"
-                elif days == ["Friday"]:
-                    weekday_tag = "fri"
-                elif days == ["Saturday"]:
-                    weekday_tag = "sat"
-                else:
-                    weekday_tag = "sun-thu"
-                break
-
-        # ── time range ─────────────────────────────────────────────────────────
-        m = time_re.search(ctx)
-        time_tag = None
-        if m:
-            h1 = m.group(1).zfill(5)   # "7:00" → "07:00"
-            h2 = m.group(2).zfill(5)
-            time_tag = f"{h1}-{h2}"
-
-        if weekday_tag and time_tag:
-            return f"{weekday_tag} {time_tag}"
-        if time_tag:
-            return time_tag
-        if weekday_tag:
-            return weekday_tag
-        return row["time_restriction"]
-
-    offers["time_restriction"] = offers.apply(_parse_one, axis=1)
-    return offers
-
 def get_user_smart_meter_status() -> bool:
+     """
+    Prompts the user via the terminal. Only valid when running pipeline.py
+    as a standalone script — raises RuntimeError in a web context.
     """
-    Interactively prompts the user via the terminal if smart meter status 
-    is not pre-configured or passed down from the master orchestrator pipeline.
-    """
-    while True:
-        user_input = input("Do you have a smart electricity meter installed? (Y/N): ").strip().upper()
-        if user_input in {'Y', 'YES'}:
-            return True
-        if user_input in {'N', 'NO'}:
-            return False
-        print("❌ Invalid input. Please enter Y or N.")
+     raise RuntimeError(
+        "get_user_smart_meter_status() cannot be called in a web context. "
+        "Pass has_smart_meter explicitly."
+    )
 
 def _bool_or_none(value):
     if pd.isna(value):
@@ -219,9 +148,6 @@ def estimate_discount_scenarios(
 
     Returns a DataFrame sorted by eligibility and weighted score descending.
     """
-    if has_smart_meter is None:
-        has_smart_meter = get_user_smart_meter_status()
-
     offers = add_offer_eligibility(offers, has_smart_meter)
     total_kWh = df["kWh"].sum()
     rows = []
@@ -277,123 +203,89 @@ def choose_recommendation(scenarios: pd.DataFrame) -> dict:
         "source_url": best.get("source_url", ""),
     }
 
-def generate_side_by_side_plots(has_smart_meter=None, processed_dir=None, table_dir=None, figure_dir=None):
+def _load_plot_inputs(
+    processed_dir: Path,
+    table_dir: Path,
+    has_smart_meter,
+) -> tuple:
     """
-    Save a side-by-side heatmap for each eligible plan: actual consumption (left)
-    vs. the plan's tariff rate matrix (right). Outputs saved to figure_dir.
+    Load and prepare the two inputs needed for side-by-side plots.
 
-    Parameters
-    ----------
-    processed_dir : Path or None
-        Directory containing weekly_hourly_stats.csv. Defaults to config.PROCESSED_DIR.
-    table_dir : Path or None
-        Directory containing discount_scenarios.csv. Defaults to config.TABLE_DIR.
-    figure_dir : Path or None
-        Directory to save comparison images. Defaults to config.FIGURE_DIR.
+    Returns
+    -------
+    consumption_matrix : pd.DataFrame
+        Pivoted weekday × hour average-kWh matrix (rows = days, cols = hours).
+    unique_plans : pd.DataFrame
+        Deduplicated table of eligible plans with columns:
+        supplier_name, plan_name, discount_pct, time_restriction.
+
+    Raises
+    ------
+    FileNotFoundError
+        If weekly_hourly_stats.csv or discount_scenarios.csv are missing.
     """
-    if has_smart_meter is None:
-        has_smart_meter = get_user_smart_meter_status()
-
-    _processed_dir = Path(processed_dir) if processed_dir is not None else PROCESSED_DIR
-    _table_dir = Path(table_dir) if table_dir is not None else TABLE_DIR
-    _figure_dir = Path(figure_dir) if figure_dir is not None else FIGURE_DIR
-
-    stats_path = _processed_dir / "weekly_hourly_stats.csv"
-
+    stats_path = processed_dir / "weekly_hourly_stats.csv"
     if not stats_path.exists():
-        raise FileNotFoundError(f"Missing processed consumption profile at: {stats_path}."
-                                f"Please run the main pipeline to generate this file before creating visual")
+        raise FileNotFoundError(
+            f"Missing processed consumption profile at: {stats_path}. "
+            "Run the main pipeline first."
+        )
 
     stats_df = pd.read_csv(stats_path)
-
-    # Pivot to weekday × hour matrix
-    consumption_matrix = stats_df.pivot(index='weekday', columns='hour', values='avg_kWh')
-
-    consumption_matrix = consumption_matrix.reindex(WEEKDAY_ORDER)
+    consumption_matrix = (
+        stats_df
+        .pivot(index="weekday", columns="hour", values="avg_kWh")
+        .reindex(WEEKDAY_ORDER)
+    )
     consumption_matrix.columns = HOURS_OF_DAY
 
-    # Load scenarios
-    scenarios_path = _table_dir / "discount_scenarios.csv"
+    scenarios_path = table_dir / "discount_scenarios.csv"
     offers_df = pd.read_csv(scenarios_path)
     offers_df = add_offer_eligibility(offers_df, has_smart_meter=has_smart_meter)
 
-    # Exclude plans the home is ineligible to utilize
-    eligible_plans = offers_df[offers_df["eligibility"] != "not_eligible_requires_smart_meter"]
-    unique_plans = eligible_plans[['supplier_name', 'plan_name', 'discount_pct', 'time_restriction']].drop_duplicates().reset_index(drop=True)
+    eligible = offers_df[offers_df["eligibility"] != "not_eligible_requires_smart_meter"]
+    unique_plans = (
+        eligible[["supplier_name", "plan_name", "discount_pct", "time_restriction"]]
+        .drop_duplicates()
+        .reset_index(drop=True)
+    )
 
-    output_images = []
+    return consumption_matrix, unique_plans
 
-    figure_dir_path = _figure_dir
-    figure_dir_path.mkdir(parents=True, exist_ok=True)
 
+def build_price_matrix(restriction: str, discount: float, tariff: float = BASE_RATE) -> pd.DataFrame:
+    """
+    Build a weekday × hour tariff-rate DataFrame for one discount plan.
+
+    All cells start at `tariff`. Cells inside the plan's discount window
+    are set to tariff × (1 - discount / 100).
+
+    Parameters
+    ----------
+    restriction : str
+        Raw time_restriction string (e.g. "sun-thu 07:00-17:00").
+    discount : float
+        Discount percentage, e.g. 15.0 for 15 %.
+    tariff : float
+        Base rate in ₪/kWh. Defaults to BASE_RATE from config.
+        Pass the sidebar value to reflect the user's custom tariff.
+
+    Returns
+    -------
+    pd.DataFrame  shape (7, 24), rows = WEEKDAY_ORDER, cols = HOURS_OF_DAY.
+    """
+    discounted_rate = round(tariff * (1 - discount / 100.0), 4)
     day_to_idx = {day: i for i, day in enumerate(WEEKDAY_ORDER)}
-    
-    for idx, row in unique_plans.iterrows():
-        supplier = row['supplier_name']
-        plan = row['plan_name']
-        discount = float(row['discount_pct'])
-        restriction = row['time_restriction']
 
-        log.info("  [plot %d] %s — %s | discount=%.1f%% | restriction=%r (type=%s)",
-                 idx, supplier, plan, discount, restriction, type(restriction).__name__)
+    matrix = np.full((len(WEEKDAY_ORDER), 24), tariff)
+    target_days  = [day_to_idx[d] for d in extract_weekdays(restriction) if d in day_to_idx]
+    target_hours = _hours_from_restriction(restriction)
 
-        try:
-            # Calculate matching cost variables
-            discounted_rate = round(BASE_RATE * (1 - (discount / 100.0)), 4)
-            log.info("    discounted_rate=%s", discounted_rate)
+    for d in target_days:
+        for h in target_hours:
+            matrix[int(d), int(h)] = discounted_rate
 
-            price_matrix = np.full((len(WEEKDAY_ORDER), 24), BASE_RATE)
-            log.info("    price_matrix shape=%s dtype=%s", price_matrix.shape, price_matrix.dtype)
+    return pd.DataFrame(matrix, index=WEEKDAY_ORDER, columns=HOURS_OF_DAY)
 
-            # Extract target days and hours from the restriction text
-            target_days = [day_to_idx[d] for d in extract_weekdays(restriction) if d in day_to_idx]
-            target_hours = _hours_from_restriction(restriction)
-            log.info("    target_days=%s (types=%s)", target_days, [type(x).__name__ for x in target_days[:3]])
-            log.info("    target_hours=%s (types=%s)", target_hours[:5], [type(x).__name__ for x in target_hours[:3]])
 
-            for d in target_days:
-                for h in target_hours:
-                    price_matrix[int(d), int(h)] = discounted_rate
-
-            log.info("    price_matrix filled OK")
-            plan_matrix_df = pd.DataFrame(price_matrix, index=WEEKDAY_ORDER, columns=HOURS_OF_DAY)
-            log.info("    plan_matrix_df created OK")
-
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 5.5))
-            log.info("    subplots created OK")
-
-            # Left: actual consumption
-            sns.heatmap(consumption_matrix, annot=False, fmt=".2f", cmap="Oranges", ax=ax1, cbar_kws={'label': 'Usage (kWh)'})
-            log.info("    left heatmap OK")
-            ax1.set_title("Your Family's Real Consumption Profile", fontsize=11, fontweight='bold')
-            ax1.tick_params(axis='x', rotation=45)
-
-            # Right: tariff rate matrix
-            sns.heatmap(plan_matrix_df, annot=False, fmt=".3f", cmap="RdYlGn_r", vmin=0.450, vmax=BASE_RATE, ax=ax2, cbar_kws={'label': 'Tariff Rate (NIS)'})
-            log.info("    right heatmap OK")
-            ax2.set_title(f"{supplier} — {plan} ({discount}% Min Discount)", fontsize=11, fontweight='bold')
-            ax2.tick_params(axis='x', rotation=45)
-
-            plt.tight_layout()
-
-            safe_plan_name = re.sub(r'[^a-zA-Z0-9]', '_', f"{supplier}_{plan}").lower()
-            image_filename = f"comparison_{safe_plan_name}.png"
-            image_save_path = figure_dir_path / image_filename
-
-            plt.savefig(image_save_path, dpi=150)
-            plt.close()
-            log.info("    saved %s", image_filename)
-
-        except Exception:
-            log.error("    FAILED on plan '%s — %s':\n%s", supplier, plan, traceback.format_exc())
-            plt.close()
-            continue
-
-        output_images.append({
-            "supplier": supplier,
-            "plan": plan,
-            "filename": image_filename
-        })
-
-    print(f"Saved {len(output_images)} comparison plots to {figure_dir_path}")
-    return output_images
+# _save_one_plot and generate_side_by_side_plots have moved to src/visualization.py

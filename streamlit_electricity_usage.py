@@ -50,7 +50,6 @@ with col_mode:
         horizontal=True,
         help="Simple: overview, discounts, and savings calculator. Analyst: all tabs.",
     )
-#st.markdown("### Smart analysis of your household electricity usage")
 # Place to custom CSS to make the sidebar font a bit bigger and more readable.
 st.markdown("""
 <style>
@@ -133,21 +132,14 @@ div[data-testid="stAlert"][kind="success"] {
 # ROOT is the repo folder (where this file lives).
 # Adding ROOT and ROOT/src to sys.path lets us import config.py and src/ modules.
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "src"))
 
 # ── SHARED CONFIG ─────────────────────────────────────────────────────────────
 # config.py holds constants shared by all users (tariff, weekday order, etc.).
 # Fallback values are used if config.py is missing on another machine.
-try:
-    from config import WEEKDAY_ORDER, TARIFF, DISCOUNT_OFFERS_FILE
-except ImportError:
-    WEEKDAY_ORDER = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-    TARIFF = 0.666
-    DISCOUNT_OFFERS_FILE = ROOT / "data" / "external" / "electricity_discount_offers.csv"
+from config import WEEKDAY_ORDER, TARIFF, DISCOUNT_OFFERS_FILE
 
 # ── SRC IMPORTS ───────────────────────────────────────────────────────────────
-from src.discount_analysis import _hours_from_restriction, extract_weekdays, add_offer_eligibility
+from src.discount_analysis import add_offer_eligibility
 
 # ── PIPELINE ──────────────────────────────────────────────────────────────────
 try:
@@ -165,6 +157,9 @@ if "user_dir" not in st.session_state:
 
 USER_DIR = Path(st.session_state["user_dir"])
 PROCESSED_DIR = USER_DIR / "processed"
+# By using the processed_dir as part of the cache key (via the function argument),
+# we ensure that the cache is invalidated when the processed directory changes.
+
 PROCESSED_DIR.mkdir(exist_ok=True)
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
@@ -178,9 +173,18 @@ sidebar = render_sidebar(
 
 # ── LOAD DATA ─────────────────────────────────────────────────────────────────
 from app_loaders import load_data, load_weather_data, load_clustering_data, load_report
-from app_loaders import detect_columns, safe_mean, safe_max
+from app_loaders import detect_columns, safe_mean, safe_max, _pipeline_cache_key
 
-df_clean, hourly, daily, daily_totals, scenarios = load_data(str(PROCESSED_DIR))
+df_clean, hourly, daily, daily_totals, scenarios, load_error = load_data(
+    str(PROCESSED_DIR), _pipeline_cache_key(PROCESSED_DIR)
+)
+if load_error is not None and _pipeline_cache_key(PROCESSED_DIR) != 0.0:
+    # Only show the warning if the pipeline has run before (cache key != 0.0 means
+    # the file existed at some point). On first open, stay silent.
+    st.warning(
+        "Some required processed files are missing or could not be loaded. "
+        "Please run the pipeline first."
+    )
 
 # ── SIDEBAR DATASET SUMMARY ───────────────────────────────────────────────────
 if df_clean is not None and "date" in df_clean.columns:
@@ -232,14 +236,12 @@ if view_mode == "Simple":
 
     with tab1:
         render_overview(daily_totals, date_col, daily_value_col, df_clean,
-                        consumption_col, safe_mean, safe_max,
-                        WEEKDAY_ORDER=WEEKDAY_ORDER, simple=True)
+                        consumption_col, weekday_order=WEEKDAY_ORDER, simple=True)
     with tab2:
         render_behavior_profile(df_clean, simple=True)
     with tab3:
         render_weather(df_clean, simple=True)
-    with tab4:
-        render_calculator(
+    with tab4:        render_calculator(
             df_clean,
             get_offers_df(),
             sidebar["tariff"],
@@ -247,10 +249,9 @@ if view_mode == "Simple":
             customer_types=sidebar["customer_types"],
         )
     with tab5:
-        render_discounts(scenarios, PROCESSED_DIR, WEEKDAY_ORDER, sidebar["tariff"],
-                         add_offer_eligibility, extract_weekdays, _hours_from_restriction)
+        render_discounts(scenarios, PROCESSED_DIR, WEEKDAY_ORDER, sidebar["tariff"])
     with tab6:
-        render_report(lambda: load_report(str(PROCESSED_DIR)), ROOT, simple=True)
+        render_report(lambda: load_report(str(PROCESSED_DIR), _pipeline_cache_key(PROCESSED_DIR)), USER_DIR, simple=True)
     with tab7:
         render_about(df_clean, daily_totals, hourly)
 
@@ -262,8 +263,7 @@ else:
     ])
 
     with tab1:
-        render_overview(daily_totals, date_col, daily_value_col, df_clean, consumption_col,
-                        safe_mean, safe_max)
+        render_overview(daily_totals, date_col, daily_value_col, df_clean, consumption_col)
     with tab2:
         render_hourly(df_clean, hourly, consumption_col, WEEKDAY_ORDER)
     with tab3:
@@ -277,8 +277,7 @@ else:
     with tab7:
         render_weather(df_clean)
     with tab8:
-        render_discounts(scenarios, PROCESSED_DIR, WEEKDAY_ORDER, sidebar["tariff"],
-                         add_offer_eligibility, extract_weekdays, _hours_from_restriction)
+        render_discounts(scenarios, PROCESSED_DIR, WEEKDAY_ORDER, sidebar["tariff"])
     with tab9:
         render_calculator(
             df_clean,
@@ -288,6 +287,6 @@ else:
             customer_types=sidebar["customer_types"],
         )
     with tab10:
-        render_report(lambda: load_report(str(PROCESSED_DIR)), ROOT)
+        render_report(lambda: load_report(str(PROCESSED_DIR), _pipeline_cache_key(PROCESSED_DIR)), USER_DIR)
     with tab11:
         render_about(df_clean, daily_totals, hourly)

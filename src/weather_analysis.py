@@ -7,6 +7,7 @@ This module provides functions to fetch and analyze weather data in relation to 
 """
 
 from pathlib import Path
+from typing import Optional
 import pandas as pd
 import plotly.express as px
 import requests
@@ -22,9 +23,9 @@ except ImportError:
 def fetch_weather_open_meteo(
     start_date,
     end_date,
-    latitude: float = None,
-    longitude: float = None,
-    timezone: str = None,
+    latitude: float,
+    longitude: float,
+    timezone: str = LOCAL_TIMEZONE,
 ) -> pd.DataFrame:
     """Fetch hourly weather from Open-Meteo.
 

@@ -43,8 +43,9 @@ def compute_daily_totals(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def compute_summary(df: pd.DataFrame, hourly: pd.DataFrame, daily: pd.DataFrame) -> dict:
-    """Computes overall summary statistics for the report.  Prepares a dictionary for the template."""
+    """Computes overall summary statistics for the report."""
     peak = hourly.loc[hourly["avg_kWh"].idxmax()]
+    peak_hour = int(peak["hour"].item())
     return {
         "start_date": str(df["date"].min()),
         "end_date": str(df["date"].max()),
@@ -53,6 +54,6 @@ def compute_summary(df: pd.DataFrame, hourly: pd.DataFrame, daily: pd.DataFrame)
         "total_kWh": float(df["kWh"].sum()),
         "avg_daily_kWh": float(daily["avg_daily_kWh"].mean()),
         "peak_weekday": str(peak["weekday"]),
-        "peak_hour": int(peak["hour"]),
+        "peak_hour": peak_hour,
         "peak_avg_kWh": float(peak["avg_kWh"]),
     }

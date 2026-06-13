@@ -22,14 +22,15 @@ Additional option: visualization of the pipeline using streamlit (the code is al
 import sys
 import logging
 from pathlib import Path
+import traceback as _tb
 import config
 from src.loader import load_raw_csv, load_discount_offers
 from src.preprocessing import clean_consumption_data
 from src.aggregation import compute_hourly_stats, compute_daily_stats, compute_daily_totals, compute_summary
 from src.outliers import detect_outliers_3sigma, detect_outliers_iqr, calculate_outlier_summary
-from src.visualization import save_all_visuals, save_clustering_visuals
+from src.visualization import save_all_visuals, save_clustering_visuals, generate_side_by_side_plots
 from src.weather_analysis import add_weather, summarize_weather, save_weather_plots
-from src.discount_analysis import estimate_discount_scenarios, choose_recommendation, generate_side_by_side_plots, get_user_smart_meter_status
+from src.discount_analysis import estimate_discount_scenarios, choose_recommendation, get_user_smart_meter_status
 from src.reporting import write_report
 from src.clustering import run_clustering
 
@@ -106,8 +107,10 @@ def run_pipeline(
     raw = load_raw_csv(csv_path)
     df = clean_consumption_data(raw)
     log.info("  Loaded %d rows, columns: %s", len(df), df.columns.tolist())
-    df.to_csv(processed_dir / "cleaned_consumption.csv", index=False)
-    log.info("  Saved cleaned_consumption.csv")
+    out_path = processed_dir / "cleaned_consumption.csv"
+    log.info("  Writing cleaned data to: %s (dir exists: %s)", out_path, processed_dir.exists())
+    df.to_csv(out_path, index=False)
+    log.info("  Saved cleaned_consumption.csv (exists: %s)", out_path.exists())
 
     # ── CLUSTERING ────────────────────────────────────────────────────────────
     _progress(2, "Running KMeans clustering…")
@@ -183,7 +186,7 @@ def run_pipeline(
     log.info("  Generated %d side-by-side plots.", len(generated_plots))
 
     # ── REPORT ────────────────────────────────────────────────────────────────
-    import traceback as _tb
+    
     _progress(7, "Writing report…")
     summary = compute_summary(df, hourly, daily)
     log.info("  Summary keys/types: %s", {k: type(v).__name__ for k, v in summary.items()})

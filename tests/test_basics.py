@@ -51,6 +51,8 @@ from src.features import (
     night_baseline,
     build_user_features,
     _safe_ratio,
+    _hourly,
+    _daily,
 )
 from src.discount_analysis import (
     _hours_from_restriction,
@@ -174,10 +176,11 @@ class TestLoader(unittest.TestCase):
         finally:
             path.unlink()
 
-    def test_find_header_row_no_hebrew_returns_zero(self):
+    def test_find_header_row_no_hebrew_raises(self):
         """
-        If the header line is not present (e.g. wrong file), the function
-        should fall back to row 0 rather than crashing.
+        If the Hebrew header line is not found, find_header_row raises ValueError.
+        This is the correct behaviour — the user uploaded the wrong file and we
+        want a clear error, not silent data corruption from reading row 0.
         """
         content = "date,time,kwh\n07/01/2024,00:00,0.1\n"
         with tempfile.NamedTemporaryFile(
@@ -187,8 +190,8 @@ class TestLoader(unittest.TestCase):
             path = Path(f.name)
 
         try:
-            row = find_header_row(path)
-            self.assertEqual(row, 0)
+            with self.assertRaises(ValueError):
+                find_header_row(path)
         finally:
             path.unlink()
 
@@ -197,10 +200,11 @@ class TestLoader(unittest.TestCase):
     def test_load_raw_csv_too_few_columns_raises(self):
         """
         The IEC file must have at least 5 columns.
-        If someone uploads a 3-column file, we should get a clear ValueError
-        instead of silently loading the wrong columns.
+        If the file has the Hebrew header but only 3 columns, load_raw_csv
+        must raise a clear ValueError about the column count.
         """
-        content = "col1,col2,col3\nval1,val2,val3\n"
+        # Hebrew header row present (so find_header_row succeeds), but only 3 columns.
+        content = "תאריך,מועד תחילת הפעימה,col3\nval1,val2,val3\n"
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".csv", encoding="utf-8-sig", delete=False
         ) as f:
@@ -216,11 +220,15 @@ class TestLoader(unittest.TestCase):
 
     def test_load_raw_csv_valid(self):
         """
-        A valid IEC file (with 5+ columns, no Hebrew header for simplicity)
-        should return a DataFrame with exactly the columns: date, time, kWh.
+        A valid IEC CSV (Hebrew header row + 5+ columns) should return a
+        DataFrame with exactly the columns: date, time, kWh.
         """
-        # Columns: 0=junk, 1=junk, 2=date, 3=time, 4=kwh
-        content = "junk0,junk1,date,time,kwh\njunk,junk,07/01/2024,00:00,0.1\n"
+        # Real IEC layout: Hebrew header on row 0, data on row 1.
+        # Columns: 0=תאריך(date), 1=מועד תחילת הפעימה(time), 2=junk, 3=junk, 4=kwh
+        content = (
+            'תאריך,מועד תחילת הפעימה,col3,col4,kwh\n'
+            '07/01/2024,00:00,val3,val4,0.1\n'
+        )
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".csv", encoding="utf-8-sig", delete=False
         ) as f:
@@ -487,6 +495,11 @@ class TestFeatures(unittest.TestCase):
 
     def setUp(self):
         self.df = _make_clean_df(n_days=14)  # 2 weeks for stable averages
+        # Feature functions expect hourly-resampled data, not raw 15-min readings.
+        # _hourly() returns a DataFrame with 'datetime' and 'kWh_hour' columns.
+        # _daily() returns a DataFrame with 'datetime' and 'kWh_day' columns.
+        self.h = _hourly(self.df)
+        self.daily_h = _daily(self.df)
 
     def test_safe_ratio_zero_denominator(self):
         """
@@ -501,13 +514,13 @@ class TestFeatures(unittest.TestCase):
         day + evening + night fractions must sum to ~1.0 (scale-invariant property).
         If they don't, the clustering distances are distorted.
         """
-        ratios = time_of_day_ratios(self.df)
+        ratios = time_of_day_ratios(self.h)
         total = ratios["daytime_activity_share"] + ratios["ratio_evening"] + ratios["ratio_night"]
         self.assertAlmostEqual(total, 1.0, places=5)
 
     def test_time_of_day_ratios_all_nonnegative(self):
         """No ratio should be negative (would mean negative electricity usage)."""
-        ratios = time_of_day_ratios(self.df)
+        ratios = time_of_day_ratios(self.h)
         for name, val in ratios.items():
             self.assertGreaterEqual(val, 0.0, f"{name} is negative: {val}")
 
@@ -517,14 +530,14 @@ class TestFeatures(unittest.TestCase):
         For typical data, CV is between 0 and 1, so routine_score ∈ [-∞, 1].
         But for well-behaved data it should be in [0, 1].
         """
-        result = regularity_features(self.df)
+        result = regularity_features(self.h, self.daily_h)
         self.assertIn("routine_score", result.index)
         # A perfectly constant signal would give routine_score = 1
         # (cv_same_hour = 0 when std = 0)
 
     def test_peak_features_hour_in_range(self):
         """Peak hour must be an integer in [0, 23]."""
-        result = peak_features(self.df)
+        result = peak_features(self.h)
         self.assertGreaterEqual(result["hour_of_peak"], 0)
         self.assertLessEqual(result["hour_of_peak"], 23)
 
@@ -789,6 +802,119 @@ class TestDiscountCalculator(unittest.TestCase):
                 pct_weekday_night=0,
                 pct_weekend=0,
             )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  8. PIPELINE INTERMEDIATE FILES
+#  Verifies that each pipeline step saves the files the next step depends on.
+#  Catches "[Errno 2] No such file or directory" errors before they hit the app.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestPipelineFiles(unittest.TestCase):
+    """
+    Check that pipeline steps write the intermediate files they promise.
+    Uses a real (tiny) raw DataFrame so we exercise the actual save logic.
+    """
+
+    def _make_valid_raw_csv(self, path: Path):
+        """Write a minimal valid IEC-format CSV to disk."""
+        content = (
+            "תאריך,מועד תחילת הפעימה,col3,col4,kwh\n"
+            + "".join(
+                f"07/01/2024,{h:02d}:00,x,x,0.1\n" for h in range(24)
+            )
+            * 7  # 7 days so clustering has enough rows
+        )
+        path.write_text(content, encoding="utf-8-sig")
+
+    def test_cleaned_csv_is_written_to_processed_dir(self):
+        """
+        After load + clean, cleaned_consumption.csv must exist in processed_dir.
+        If it doesn't, clustering raises FileNotFoundError.
+        """
+        from src.loader import load_raw_csv
+        from src.preprocessing import clean_consumption_data
+
+        with tempfile.TemporaryDirectory() as tmp:
+            processed_dir = Path(tmp) / "processed"
+            processed_dir.mkdir()
+            csv_path = Path(tmp) / "raw.csv"
+            self._make_valid_raw_csv(csv_path)
+
+            raw = load_raw_csv(csv_path)
+            df = clean_consumption_data(raw)
+            out = processed_dir / "cleaned_consumption.csv"
+            df.to_csv(out, index=False)
+
+            self.assertTrue(out.exists(), "cleaned_consumption.csv was not written")
+            self.assertGreater(out.stat().st_size, 0, "cleaned_consumption.csv is empty")
+
+    def test_clustering_reads_cleaned_csv(self):
+        """
+        run_clustering must succeed when cleaned_consumption.csv exists,
+        and must raise FileNotFoundError when it doesn't.
+        """
+        from src.clustering import run_clustering
+
+        with tempfile.TemporaryDirectory() as tmp:
+            processed_dir = Path(tmp) / "processed"
+            processed_dir.mkdir()
+            missing = processed_dir / "cleaned_consumption.csv"
+
+            with self.assertRaises((FileNotFoundError, Exception)):
+                run_clustering(
+                    input_path=missing,
+                    output_path=processed_dir / "clustered.csv",
+                    summary_path=processed_dir / "summary.csv",
+                )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  9. IMPORT SMOKE TESTS
+
+#  These catch NameError / ImportError at module level (missing imports,
+#  undefined constants, etc.) — exactly the class of bugs fixed recently.
+#  Run these first; if they fail, nothing else will work.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestImports(unittest.TestCase):
+    """
+    Verify every src module and the pipeline can be imported without error.
+    A failure here means a missing import or undefined name at module level.
+    """
+
+    def test_import_config(self):
+        import config
+
+    def test_import_clustering(self):
+        import src.clustering
+
+    def test_import_visualization(self):
+        import src.visualization
+
+    def test_import_features(self):
+        import src.features
+
+    def test_import_preprocessing(self):
+        import src.preprocessing
+
+    def test_import_aggregation(self):
+        import src.aggregation
+
+    def test_import_outliers(self):
+        import src.outliers
+
+    def test_import_discount_analysis(self):
+        import src.discount_analysis
+
+    def test_import_discount_calculator(self):
+        import src.discount_calculator
+
+    def test_import_loader(self):
+        import src.loader
+
+    def test_import_pipeline(self):
+        import pipeline
 
 
 # ══════════════════════════════════════════════════════════════════════════════

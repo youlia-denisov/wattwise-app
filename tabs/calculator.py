@@ -1,12 +1,8 @@
-import sys
-from pathlib import Path
-
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-# Make sure src/ is importable when this module is loaded
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+from src.loader import detect_kwh_col
 
 
 # These two helpers live at module level so @st.cache_data can manage them across reruns.
@@ -90,10 +86,8 @@ def _get_calc_df(df_clean, mode):
         if df_clean is None or df_clean.empty:
             st.warning("No consumption data loaded. Run the pipeline first.")
             return None, None
-        calc_df = df_clean.rename(columns={
-            c: "kWh" for c in df_clean.columns
-            if any(w in c.lower() for w in ["kwh", "consumption"])
-        })
+        kwh_col = detect_kwh_col(df_clean)
+        calc_df = df_clean.rename(columns={kwh_col: "kWh"}) if kwh_col else df_clean
         observation_days = (
             pd.to_datetime(calc_df["date"]).dt.date.nunique()
             if "date" in calc_df.columns else 30
