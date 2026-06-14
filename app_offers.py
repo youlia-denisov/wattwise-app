@@ -5,6 +5,7 @@ get_offers_df() is the single entry point used by the sidebar and the
 Calculator tab. It returns a DataFrame of available plans, refreshing
 from the scraper at most once a week.
 """
+import concurrent.futures
 import time
 from pathlib import Path
 
@@ -15,6 +16,7 @@ import streamlit as st
 from config import DISCOUNT_OFFERS_FILE
 
 ONE_WEEK_SECONDS = 7 * 24 * 3600
+SCRAPE_TIMEOUT_SECONDS = 25  # cap total scrape time; 7 URLs × 15s could block for ~105s
 
 
 def get_offers_df() -> pd.DataFrame:
@@ -44,10 +46,19 @@ def get_offers_df() -> pd.DataFrame:
     # File is stale or missing — try to scrape fresh data.
     try:
         from src.scraper import scrape_offers  # built separately; may not exist yet
-        df = scrape_offers()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(scrape_offers)
+            df = future.result(timeout=SCRAPE_TIMEOUT_SECONDS)
         DISCOUNT_OFFERS_FILE.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(DISCOUNT_OFFERS_FILE, index=False)
         return df
+    except concurrent.futures.TimeoutError:
+        # Scrape took too long (e.g. slow network on Streamlit Cloud). Fall back to cached file.
+        if DISCOUNT_OFFERS_FILE.exists():
+            st.warning("⏱️ Could not refresh offers (timed out). Showing last saved data.")
+            return pd.read_csv(DISCOUNT_OFFERS_FILE)
+        st.warning("⏱️ Offers could not be fetched (timed out) and no cached file exists. Discount tabs will be empty.")
+        return pd.DataFrame()
     except ImportError:
         # Scraper not available — use the existing file even if it's old.
         if DISCOUNT_OFFERS_FILE.exists():

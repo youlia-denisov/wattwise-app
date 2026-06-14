@@ -74,7 +74,17 @@ def run_pipeline(
     log.info("Starting pipeline execution...")
 
     # ── RESOLVE PATHS ─────────────────────────────────────────────────────────
-    csv_path = Path(input_file) if input_file is not None else config.CONSUMPTION_FILE
+    if input_file is None:
+        raise ValueError(
+            "input_file is required. Pass the path to the user's uploaded CSV. "
+            "config.CONSUMPTION_FILE is not available in the deployed app."
+        )
+    csv_path = Path(input_file)
+    if not csv_path.exists():
+        raise FileNotFoundError(
+            f"Input file not found: {csv_path}. "
+            "Please upload a CSV file before running the pipeline."
+        )
     log.info("Input file: %s", csv_path)
 
     if output_dir is not None:

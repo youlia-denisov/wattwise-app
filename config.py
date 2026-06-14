@@ -3,8 +3,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_ROOT / "data"
-RAW_DIR = DATA_DIR / "raw"
 EXTERNAL_DIR = DATA_DIR / "external"
+
+# ── STANDALONE-ONLY PATHS ─────────────────────────────────────────────────────
+# These paths are used when running the pipeline locally from the command line.
+# In the deployed Streamlit app, each user gets a per-session temp directory
+# (set in streamlit_electricity_usage.py), so these are never used at runtime.
+RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
 HTML_DIR = OUTPUT_DIR / "html"
@@ -12,6 +17,9 @@ FIGURE_DIR = OUTPUT_DIR / "figures"
 TABLE_DIR = OUTPUT_DIR / "tables"
 REPORT_DIR = PROJECT_ROOT / "reports"
 
+# ── FILES ─────────────────────────────────────────────────────────────────────
+# CONSUMPTION_FILE is a standalone fallback only — pipeline.py requires
+# input_file to be passed explicitly; this is never used in the deployed app.
 CONSUMPTION_FILE = RAW_DIR / "Electricity_consumption.csv"
 DISCOUNT_OFFERS_FILE = EXTERNAL_DIR / "electricity_discount_offers.csv"
 
