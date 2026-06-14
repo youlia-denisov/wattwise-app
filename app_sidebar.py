@@ -5,6 +5,7 @@ render_sidebar() draws everything in the left panel and returns a dict
 with the user's settings so the main file can pass them to the tabs.
 """
 import datetime
+import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -15,6 +16,50 @@ from src.loader import load_raw_csv
 from src.preprocessing import clean_consumption_data
 from app_offers import get_offers_df, DISCOUNT_OFFERS_FILE
 from app_loaders import load_data, load_clustering_data, load_weather_data
+
+# ── DEMO DATA PATHS ───────────────────────────────────────────────────────────
+# Pre-generated synthetic data bundled with the app for recruiter demos.
+_APP_ROOT   = Path(__file__).resolve().parent
+DEMO_CSV    = _APP_ROOT / "data" / "demo" / "sample_electricity.csv"
+DEMO_PROCESSED = _APP_ROOT / "data" / "demo" / "processed"
+DEMO_TABLES    = _APP_ROOT / "data" / "demo" / "tables"
+DEMO_REPORTS   = _APP_ROOT / "data" / "demo" / "reports"
+
+
+def _activate_demo_mode(user_dir: Path) -> None:
+    """
+    Copy pre-generated demo processed files into the user's temp dir
+    and load the demo raw CSV into session_state — so the full dashboard
+    is visible immediately without any user action.
+    """
+    try:
+        processed_dir = user_dir / "processed"
+        processed_dir.mkdir(parents=True, exist_ok=True)
+        # Copy all pre-generated CSVs into the user's processed folder
+        for src in DEMO_PROCESSED.glob("*.csv"):
+            shutil.copy2(src, processed_dir / src.name)
+        # Copy tables (discount scenarios)
+        tables_dir = user_dir / "tables"
+        tables_dir.mkdir(parents=True, exist_ok=True)
+        for src in DEMO_TABLES.glob("*.csv"):
+            shutil.copy2(src, tables_dir / src.name)
+        # Copy report
+        reports_dir = user_dir / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        for src in DEMO_REPORTS.glob("*.md"):
+            shutil.copy2(src, reports_dir / src.name)
+        # Also copy the raw demo CSV so the pipeline button works if clicked
+        shutil.copy2(DEMO_CSV, user_dir / "raw_input.csv")
+        # Load the cleaned df into session state
+        raw_df   = load_raw_csv(DEMO_CSV)
+        clean_df = clean_consumption_data(raw_df)
+        st.session_state["uploaded_df"]  = clean_df
+        st.session_state["demo_mode"]    = True
+        # Bust the loader cache so the copied files are picked up
+        load_data.clear()
+        load_clustering_data.clear()
+    except Exception as e:
+        st.warning(f"Demo mode could not load: {e}")
 
 
 def _handle_file_upload(uploaded_file, user_dir: Path) -> None:
@@ -65,10 +110,37 @@ def render_sidebar(user_dir: Path, pipeline_available: bool, run_pipeline_fn) ->
     with st.sidebar:
         st.header("⚡ Dashboard Setup")
 
+        # ── DEMO MODE ─────────────────────────────────────────────────────────
+        # Auto-activate demo mode on first load if the demo data is available
+        # and the user hasn't uploaded their own file yet.
+        if (
+            "uploaded_df" not in st.session_state
+            and DEMO_CSV.exists()
+            and DEMO_PROCESSED.exists()
+            and not st.session_state.get("demo_dismissed")
+        ):
+            _activate_demo_mode(user_dir)
+            st.rerun()
+
+        if st.session_state.get("demo_mode"):
+            st.info(
+                "📊 **Demo mode** — showing synthetic sample data.  \n"
+                "Upload your own IEC CSV below to analyse your household.",
+                icon="ℹ️",
+            )
+            if st.button("✕ Dismiss demo", use_container_width=True):
+                st.session_state["demo_dismissed"] = True
+                st.session_state.pop("demo_mode", None)
+                st.session_state.pop("uploaded_df", None)
+                load_data.clear()
+                load_clustering_data.clear()
+                st.rerun()
+
         # ── STEP 1: FILE UPLOAD ────────────────────────────────────────────────
         st.markdown("**Step 1 — Upload your file**")
         uploaded_file = st.file_uploader("Electricity CSV", type="csv", label_visibility="collapsed")
         if uploaded_file is not None:
+            st.session_state.pop("demo_mode", None)   # switch out of demo mode
             _handle_file_upload(uploaded_file, user_dir)
 
         st.divider()

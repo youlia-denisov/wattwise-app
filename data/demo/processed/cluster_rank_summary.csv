@@ -1,0 +1,4 @@
+cluster_rank_label,n_days,avg_daily_kWh,min_daily_kWh,max_daily_kWh
+Low Usage,61,29.498,27.042,32.141
+Medium Usage,61,37.478,33.571,41.321
+High Usage,62,44.318,42.567,46.097
