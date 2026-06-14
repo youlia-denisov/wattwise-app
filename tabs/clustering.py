@@ -90,6 +90,10 @@ def render_clustering(load_clustering_data, WEEKDAY_ORDER):
         )
         return
 
+    # Defensive: older cached CSVs may be missing cluster_rank — regenerate it.
+    if "cluster_rank" not in df_base.columns:
+        df_base = assign_cluster_ranks(df_base)
+
     # ── k selector ────────────────────────────────────────────────────────────
     pipeline_k = int(df_base["cluster_rank"].nunique())
     k = _render_k_selector(df_base, pipeline_k)
