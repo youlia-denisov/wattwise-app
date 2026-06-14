@@ -216,12 +216,19 @@ def peak_features(h: pd.DataFrame) -> pd.Series:
 
 def night_baseline(h: pd.DataFrame) -> pd.Series:
     """
-    Minimal Consumption Baseline — average kWh/hour between 23:00 and 07:00.
+    Minimal Consumption Baseline — minimum of per-hour medians across all hours.
+
+    For each hour of the day (0–23), compute the median kWh across all days in
+    the dataset, then take the minimum of those 24 medians. This finds the
+    single quietest hour on a typical night without requiring a hardcoded window.
+
+    Using the median per hour (rather than mean) makes the estimate resistant to
+    occasional spikes — one night of high usage in a given hour does not inflate
+    the result. Taking the minimum then identifies the true standby floor.
 
     This is the electricity your household cannot switch off: fridges, routers,
     heating/cooling systems, medical devices, fish tanks, servers, standby
-    electronics. Because everyone is typically asleep during this window,
-    intentional activity is near zero — what remains is the irreducible floor.
+    electronics.
 
     It is a raw absolute value (not a ratio) because the *scale* matters here:
         < 0.10 kWh/h  — very low standby; efficient household
@@ -233,11 +240,11 @@ def night_baseline(h: pd.DataFrame) -> pd.Series:
     consumption rises or falls — it isolates the baseline independent of habits.
     """
     h = h.copy()
-
     h["hour"] = h["datetime"].dt.hour
-    night_mean = h.loc[(h["hour"] >= NIGHT_START_HOUR) | (h["hour"] < DAY_START_HOUR), "kWh_hour"].mean()
+    hourly_medians = h.groupby("hour")["kWh_hour"].median()
+    standby = hourly_medians.min()
 
-    return pd.Series({"min_consumption_baseline_kwh": night_mean})
+    return pd.Series({"min_consumption_baseline_kwh": standby})
 
 
 # ---- master function ---------------------------------------------------------
