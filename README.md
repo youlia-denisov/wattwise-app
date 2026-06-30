@@ -6,6 +6,7 @@ This is a full refactor of the [Electricity Consumption Analyser](../electricity
 
 Input: raw IEC electricity consumption file (.csv) uploaded via the sidebar.
 
+
 ---
 
 ## Quick Start
