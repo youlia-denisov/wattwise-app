@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WattWise — Electricity Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:   #0D1B2A;
+      --navy2:  #132233;
+      --navy3:  #1C3048;
+      --teal:   #1D9E75;
+      --teal2:  #5DCAA5;
+      --cream:  #F5F0E8;
+      --muted:  #9BBCB0;
+      --text:   #D6EDE7;
+      --blue:   #56B4E9;
+      --radius: 10px;
+      --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font);
+      background: var(--navy);
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    a { color: var(--teal2); text-decoration: none; }
+    a:hover { color: var(--cream); }
+
+    /* ── Nav ── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(13, 27, 42, 0.92);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid rgba(93, 202, 165, 0.12);
+      padding: 0 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 60px;
+    }
+
+    .nav-back {
+      font-size: 0.875rem; color: var(--muted);
+      display: flex; align-items: center; gap: 6px;
+      transition: color 0.2s;
+    }
+    .nav-back:hover { color: var(--cream); }
+    .nav-back svg { width: 14px; height: 14px; stroke: currentColor; fill: none; }
+
+    .nav-logo {
+      font-size: 1rem; font-weight: 700;
+      color: var(--teal2); letter-spacing: 0.04em;
+    }
+
+    .nav-cta {
+      font-size: 0.8rem; font-weight: 600;
+      background: var(--teal); color: var(--navy);
+      padding: 0.4rem 1rem; border-radius: 6px;
+      transition: background 0.2s;
+    }
+    .nav-cta:hover { background: var(--teal2); color: var(--navy); }
+
+    /* ── Hero ── */
+    .ww-hero {
+      min-height: 60vh;
+      display: flex; flex-direction: column; justify-content: center;
+      max-width: 900px; margin: 0 auto;
+      padding: 8rem 2rem 4rem;
+    }
+
+    .ww-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--blue);
+      border: 1px solid rgba(86, 180, 233, 0.3);
+      border-radius: 20px; padding: 4px 12px;
+      margin-bottom: 1.5rem; width: fit-content;
+    }
+    .ww-badge::before {
+      content: ''; width: 6px; height: 6px;
+      border-radius: 50%; background: var(--blue);
+    }
+
+    .ww-title {
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      font-weight: 700; color: var(--cream);
+      line-height: 1.1; margin-bottom: 1rem;
+    }
+    .ww-title span { color: var(--teal2); }
+
+    .ww-subtitle {
+      font-size: 1.1rem; color: var(--muted);
+      max-width: 580px; margin-bottom: 2.5rem; line-height: 1.65;
+    }
+
+    .btn-group { display: flex; gap: 1rem; flex-wrap: wrap; }
+
+    .btn {
+      display: inline-block;
+      padding: 0.7rem 1.6rem;
+      border-radius: 6px;
+      font-size: 0.9rem; font-weight: 500;
+      transition: all 0.2s;
+    }
+    .btn-primary { background: var(--teal); color: var(--navy); }
+    .btn-primary:hover { background: var(--teal2); color: var(--navy); }
+    .btn-outline {
+      border: 1px solid rgba(93, 202, 165, 0.4); color: var(--teal2);
+    }
+    .btn-outline:hover {
+      border-color: var(--teal2);
+      background: rgba(93, 202, 165, 0.06); color: var(--cream);
+    }
+
+    /* ── Sections ── */
+    .section {
+      max-width: 900px; margin: 0 auto;
+      padding: 4rem 2rem;
+    }
+
+    hr.divider {
+      border: none;
+      border-top: 1px solid rgba(93, 202, 165, 0.1);
+      max-width: 900px; margin: 0 auto;
+    }
+
+    .section-label {
+      font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--teal);
+      margin-bottom: 0.5rem;
+    }
+
+    h2 { font-size: 1.75rem; font-weight: 600; color: var(--cream); margin-bottom: 1rem; }
+    h3 { font-size: 1.05rem; font-weight: 600; color: var(--cream); margin-bottom: 0.4rem; }
+
+    p.body { color: var(--muted); font-size: 0.95rem; line-height: 1.75; margin-bottom: 1rem; }
+
+    /* ── What it does ── */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem; margin-top: 2rem;
+    }
+
+    .feature-card {
+      background: var(--navy2);
+      border: 1px solid rgba(93, 202, 165, 0.1);
+      border-radius: var(--radius);
+      padding: 1.4rem;
+      transition: border-color 0.2s;
+    }
+    .feature-card:hover { border-color: rgba(93, 202, 165, 0.35); }
+
+    .feature-icon {
+      font-size: 1.5rem; margin-bottom: 0.75rem;
+    }
+
+    .feature-card h3 { font-size: 0.95rem; margin-bottom: 0.4rem; }
+    .feature-card p { font-size: 0.85rem; color: var(--muted); line-height: 1.6; }
+
+    /* ── Pipeline ── */
+    .pipeline {
+      margin-top: 2rem;
+      display: flex; flex-direction: column; gap: 0;
+    }
+
+    .pipeline-step {
+      display: grid;
+      grid-template-columns: 48px 1fr;
+      gap: 1.25rem;
+      position: relative;
+    }
+
+    .pipeline-step:not(:last-child) .step-connector::after {
+      content: '';
+      position: absolute;
+      top: 48px; left: 23px;
+      width: 2px; height: calc(100% - 16px);
+      background: rgba(93, 202, 165, 0.15);
+    }
+
+    .step-connector {
+      display: flex; flex-direction: column; align-items: center;
+      position: relative;
+    }
+
+    .step-num {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: var(--navy3);
+      border: 2px solid var(--teal);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.8rem; font-weight: 700; color: var(--teal2);
+      flex-shrink: 0; z-index: 1;
+    }
+
+    .step-body {
+      padding: 0.6rem 0 1.75rem;
+    }
+    .step-body h3 { font-size: 0.95rem; color: var(--cream); margin-bottom: 0.25rem; }
+    .step-body p { font-size: 0.85rem; color: var(--muted); line-height: 1.6; }
+
+    .step-tag {
+      display: inline-block;
+      font-size: 0.68rem; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      padding: 2px 8px; border-radius: 4px;
+      margin-bottom: 0.4rem;
+    }
+    .tag-ml  { background: rgba(127,119,221,0.15); color: #9E99E8; }
+    .tag-data { background: rgba(29,158,117,0.12); color: var(--teal2); }
+    .tag-viz  { background: rgba(86,180,233,0.12); color: var(--blue); }
+    .tag-api  { background: rgba(239,159,39,0.12); color: #EF9F27; }
+
+    /* ── Architecture ── */
+    .arch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1px;
+      background: rgba(93, 202, 165, 0.1);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-top: 2rem;
+    }
+
+    .arch-layer {
+      background: var(--navy2);
+      padding: 1.25rem;
+    }
+
+    .arch-layer .layer-label {
+      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--teal);
+      margin-bottom: 0.6rem;
+    }
+
+    .arch-layer p {
+      font-size: 0.82rem; color: var(--muted); line-height: 1.6;
+    }
+
+    /* ── Tech stack ── */
+    .tech-grid {
+      display: flex; flex-wrap: wrap; gap: 10px;
+      margin-top: 1.5rem;
+    }
+
+    .tech-pill {
+      font-size: 0.82rem;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(13, 27, 42, 0.8);
+      border: 1px solid rgba(93, 202, 165, 0.2);
+      color: var(--teal2);
+    }
+
+    /* ── Note banner ── */
+    .note-banner {
+      background: rgba(86, 180, 233, 0.07);
+      border: 1px solid rgba(86, 180, 233, 0.2);
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+      font-size: 0.87rem; color: var(--muted);
+      margin-top: 1.5rem;
+      display: flex; gap: 10px; align-items: flex-start;
+    }
+    .note-banner::before {
+      content: 'ℹ️'; flex-shrink: 0; margin-top: 1px;
+    }
+
+    /* ── CTA block ── */
+    .cta-block {
+      background: var(--navy2);
+      border: 1px solid rgba(93, 202, 165, 0.15);
+      border-radius: var(--radius);
+      padding: 3rem 2rem;
+      text-align: center;
+      margin: 4rem auto;
+      max-width: 900px;
+    }
+    .cta-block h2 { margin-bottom: 0.75rem; }
+    .cta-block p { color: var(--muted); margin-bottom: 2rem; }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid rgba(93, 202, 165, 0.08);
+      text-align: center;
+      padding: 2rem;
+      font-size: 0.8rem; color: rgba(155, 188, 176, 0.4);
+    }
+    footer a { color: rgba(93, 202, 165, 0.5); }
+    footer a:hover { color: var(--teal2); }
+
+    @media (max-width: 640px) {
+      nav { padding: 0 1rem; }
+      .ww-hero { padding: 7rem 1.25rem 3rem; }
+      .section { padding: 3rem 1.25rem; }
+      .arch-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav>
+  <a href="index.html" class="nav-back">
+    <svg viewBox="0 0 24 24" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+    Portfolio
+  </a>
+  <span class="nav-logo">WattWise</span>
+  <a href="https://ds-portfolio-7va4xdxzmrbb8psjkdphfh.streamlit.app/" target="_blank" class="nav-cta">Open App ↗</a>
+</nav>
+
+<!-- Hero -->
+<div class="ww-hero">
+  <span class="ww-badge">Streamlit App</span>
+  <h1 class="ww-title">WattWise<br><span>Electricity Dashboard</span></h1>
+  <p class="ww-subtitle">
+    Upload your IEC electricity export and get a full picture of your household's consumption —
+    usage patterns, anomalies, cluster profiles, weather correlation, and discount plan savings.
+    All in one interactive dashboard, fully isolated per user.
+  </p>
+  <div class="btn-group">
+    <a href="https://ds-portfolio-7va4xdxzmrbb8psjkdphfh.streamlit.app/" target="_blank" class="btn btn-primary">Open live app ↗</a>
+    <a href="https://github.com/youlia-denisov" target="_blank" class="btn btn-outline">View on GitHub</a>
+  </div>
+</div>
+
+<hr class="divider" />
+
+<!-- What it does -->
+<section class="section">
+  <p class="section-label">Overview</p>
+  <h2>What the app does</h2>
+  <p class="body">
+    WattWise turns a raw CSV export from the Israel Electric Company into a rich, multi-tab analytical report.
+    It runs a seven-step pipeline automatically — from parsing and cleaning the data all the way through
+    machine learning, weather integration, and personalised discount recommendations.
+    Every result stays private: each browser session gets its own isolated workspace.
+  </p>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <h3>Usage Patterns</h3>
+      <p>Daily totals, weekday heatmaps, and hourly breakdowns reveal when and how much electricity you consume.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🤖</div>
+      <h3>Behaviour Clustering</h3>
+      <p>K-Means groups your readings into labelled consumption profiles — morning heavy, night owl, weekend peak, and more.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔍</div>
+      <h3>Outlier Detection</h3>
+      <p>Four methods run in parallel — 3σ, IQR, DBSCAN, and Isolation Forest — with an auto-selected recommendation.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🌤️</div>
+      <h3>Weather Correlation</h3>
+      <p>Historical temperature data from Open-Meteo is merged with your consumption to show climate-driven usage spikes.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💰</div>
+      <h3>Discount Analysis</h3>
+      <p>Live electricity discount offers are scraped weekly and matched against your actual data to show real NIS savings per plan.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🧮</div>
+      <h3>Savings Calculator</h3>
+      <p>Enter custom monthly usage or use your real data to interactively compare which discount plan saves you the most.</p>
+    </div>
+  </div>
+
+  <div class="note-banner">
+    Demo mode is available without uploading a file. Several features — clustering, outlier comparison, weather,
+    and personalised discount savings — require a real IEC export to unlock full results.
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- Pipeline -->
+<section class="section">
+  <p class="section-label">Under the hood</p>
+  <h2>How the pipeline works</h2>
+  <p class="body">
+    When you click "Run Full Pipeline", seven steps execute in sequence. Each step writes its output
+    to your private session folder, so the dashboard can reload results instantly on any tab you open.
+  </p>
+
+  <div class="pipeline">
+
+    <div class="pipeline-step">
+      <div class="step-connector"><div class="step-num">1</div></div>
+      <div class="step-body">
+        <span class="step-tag tag-data">Data</span>
+        <h3>Load &amp; Clean</h3>
+        <p>Auto-detects the header row in any IEC CSV export, isolates date/time/kWh columns,
+           coerces types, interpolates short gaps, and adds time-feature columns (hour, weekday, month).</p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <div class="step-connector"><div class="step-num">2</div></div>
+      <div class="step-body">
+        <span class="step-tag tag-ml">Machine Learning</span>
+        <h3>K-Means Clustering</h3>
+        <p>Encodes cyclical time features (hour, weekday), scales the feature matrix, and fits K-Means.
+           Clusters are ranked and assigned human-readable consumption-profile labels.</p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <div class="step-connector"><div class="step-num">3</div></div>
+      <div class="step-body">
+        <span class="step-tag tag-data">Statistics</span>
+        <h3>Aggregation &amp; Outlier Detection</h3>
+        <p>Computes hourly stats, daily stats, and daily totals. Runs 3σ and IQR outlier detection
+           in parallel and saves flagged readings for the trends tab.</p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <div class="step-connector"><div class="step-num">4</div></div>
+      <div class="step-body">
+        <span class="step-tag tag-viz">Visualisation</span>
+        <h3>Chart Generation</h3>
+        <p>Saves all Plotly charts as self-contained HTML files and heatmap comparisons as PNGs —
+           so the dashboard loads pre-rendered visuals instantly without recomputing.</p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <div class="step-connector"><div class="step-num">5</div></div>
+      <div class="step-body">
+        <span class="step-tag tag-api">External API</span>
+        <h3>Weather Integration</h3>
+        <p>Fetches historical hourly temperature data from Open-Meteo for your city,
+           merges it with consumption, and generates dual-axis correlation charts. Optional step.</p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <div class="step-connector"><div class="step-num">6</div></div>
+      <div class="step-body">
+        <span class="step-tag tag-data">Analysis</span>
+        <h3>Discount Scenario Modelling</h3>
+        <p>Matches each live electricity plan's discount hours and days against your actual readings,
+           computes eligible kWh, and estimates annual NIS savings at the configured tariff.</p>
+      </div>
+    </div>
+
+    <div class="pipeline-step">
+      <div class="step-connector"><div class="step-num">7</div></div>
+      <div class="step-body">
+        <span class="step-tag tag-viz">Report</span>
+        <h3>Summary Report</h3>
+        <p>Assembles a Markdown report from all pipeline outputs — summary stats, top outliers,
+           weather insights, and the best discount recommendation — readable in the Report tab.</p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- Architecture -->
+<section class="section">
+  <p class="section-label">Architecture</p>
+  <h2>How it's structured</h2>
+  <p class="body">
+    The codebase is split into four layers. Tabs receive pre-loaded DataFrames as arguments —
+    they never read files directly — which keeps the UI fast and the data logic testable independently.
+  </p>
+
+  <div class="arch-grid">
+    <div class="arch-layer">
+      <div class="layer-label">UI Layer</div>
+      <p>Streamlit tabs — overview, hourly, clustering, outliers, weather, discounts, calculator, report.</p>
+    </div>
+    <div class="arch-layer">
+      <div class="layer-label">Orchestration</div>
+      <p>Pipeline runner, cached data loaders, and weekly offer refresh logic with scraper fallback.</p>
+    </div>
+    <div class="arch-layer">
+      <div class="layer-label">Processing (src/)</div>
+      <p>Loader, preprocessing, aggregation, clustering, features, outlier pipeline, discount analysis, weather, reporting.</p>
+    </div>
+    <div class="arch-layer">
+      <div class="layer-label">Data Layer</div>
+      <p>Per-user temp directories, pipeline output CSVs, pre-rendered HTML charts, and Open-Meteo API.</p>
+    </div>
+  </div>
+
+  <p class="body" style="margin-top:1.5rem;">
+    Multi-user isolation is handled by <code style="color:var(--teal2); font-size:0.85em;">tempfile.mkdtemp()</code> at session start.
+    All pipeline outputs go into that directory, and <code style="color:var(--teal2); font-size:0.85em;">@st.cache_data</code>
+    uses the directory path as part of the cache key — so two users never share cached results.
+  </p>
+</section>
+
+<hr class="divider" />
+
+<!-- Tech Stack -->
+<section class="section">
+  <p class="section-label">Tech Stack</p>
+  <h2>Built with</h2>
+  <div class="tech-grid">
+    <span class="tech-pill">Python</span>
+    <span class="tech-pill">Streamlit</span>
+    <span class="tech-pill">pandas</span>
+    <span class="tech-pill">scikit-learn</span>
+    <span class="tech-pill">Plotly</span>
+    <span class="tech-pill">numpy</span>
+    <span class="tech-pill">matplotlib</span>
+    <span class="tech-pill">Open-Meteo API</span>
+    <span class="tech-pill">BeautifulSoup4</span>
+    <span class="tech-pill">requests</span>
+  </div>
+</section>
+
+<!-- CTA block -->
+<div class="cta-block">
+  <h2>See it in action</h2>
+  <p>Upload your IEC electricity CSV and explore your consumption in under a minute.</p>
+  <div class="btn-group" style="justify-content:center;">
+    <a href="https://ds-portfolio-7va4xdxzmrbb8psjkdphfh.streamlit.app/" target="_blank" class="btn btn-primary">Open WattWise ↗</a>
+    <a href="index.html" class="btn btn-outline">← Back to portfolio</a>
+  </div>
+</div>
+
+<footer>
+  <p>Part of <a href="index.html">Youlia Denisov's portfolio</a> · Built with Python &amp; Streamlit</p>
+</footer>
+
+</body>
+</html>

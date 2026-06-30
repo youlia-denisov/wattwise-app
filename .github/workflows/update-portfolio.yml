@@ -1,0 +1,37 @@
+# Triggers on push to main.
+# Checks out the portfolio agent, installs dependencies, and runs it.
+# The agent reads REPO_NAME to know which project to process.
+
+name: Update Portfolio
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  update-portfolio:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout portfolio agent
+        uses: actions/checkout@v4
+        with:
+          repository: youlia-denisov/cv-page-agent
+          path: cv-page-agent
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r cv-page-agent/requirements.txt
+
+      - name: Run portfolio agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_NAME: ${{ github.event.repository.name }}  # auto-filled by GitHub
+        run: |
+          cd cv-page-agent
+          python server.py
