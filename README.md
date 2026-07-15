@@ -31,6 +31,18 @@ streamlit run streamlit_electricity_usage.py
 Open `http://localhost:8501` in your browser.
 
 ---
+## Running with Docker
+
+Alternative to the venv setup above — packages the app with its exact dependency versions so it runs identically regardless of the host machine.
+
+```bash
+docker build -t wattwise .
+docker run -p 8501:8501 wattwise
+```
+
+Open `http://localhost:8501` in your browser.
+
+---
 
 ## Usage
 
@@ -85,7 +97,9 @@ streamlit-multiuser-app/
 ├── data/                            # Optional local fallback data
 ├── docs/                            # Prompts and reference documents
 ├── pipeline.py                      # Full analysis pipeline (optional, for batch use)
-└── pyproject.toml
+├── pyproject.toml
+├── Dockerfile                       # Container build definition
+└── .dockerignore 
 ```
 
 ---
